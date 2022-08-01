@@ -1,0 +1,27 @@
+name: twirp
+version: 0.2.0
+
+repository: https://github.com/mloughran/twirp.cr
+
+description: An implementation of Twirp in Crystal.
+
+authors:
+  - Martyn Loughran <martyn@mloughran.com>
+
+license: MIT
+
+crystal: 1.0.0
+
+scripts:
+  postinstall: shards build
+
+executables:
+  - protoc-gen-twirp_crystal
+
+targets:
+  protoc-gen-twirp_crystal:
+    main: src/protoc-gen-twirp_crystal.cr
+
+dependencies:
+  protobuf:
+    github: jeromegn/protobuf.cr

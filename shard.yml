@@ -1,0 +1,22 @@
+name: event_store_cr
+version: 0.1.0
+
+authors:
+  - name <ismaelct@gmail.com>
+
+description: |
+  A Postgres-backed Event Store, in Crystal
+
+dependencies:
+  twirp:
+    github: mloughran/twirp.cr
+#   pg:
+#     github: will/crystal-pg
+#     version: "~> 0.5"
+
+crystal: 1.2.2
+# development_dependencies:
+#   webmock:
+#     github: manastech/webmock.cr
+
+license: MIT

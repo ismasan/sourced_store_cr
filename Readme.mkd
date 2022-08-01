@@ -1,0 +1,15 @@
+## Client
+
+```
+make ruby_client
+```
+
+https://github.com/twitchtv/twirp-ruby/wiki/Twirp-Clients
+
+```ruby
+cl = TwirpTransport::EventStoreClient.new('http://127.0.0.1:8080/twirp')
+resp = cl.read_stream(stream_id: 'lol')
+resp.error
+resp.data
+resp.data.events
+```

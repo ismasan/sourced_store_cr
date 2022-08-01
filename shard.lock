@@ -1,0 +1,10 @@
+version: 2.0
+shards:
+  protobuf:
+    git: https://github.com/jeromegn/protobuf.cr.git
+    version: 2.2.3
+
+  twirp:
+    git: https://github.com/mloughran/twirp.cr.git
+    version: 0.2.0
+

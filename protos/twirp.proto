@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package twirp_transport;
+
+service EventStore {
+  rpc ReadStream(ReadStreamRequest) returns (ReadStreamResponse) {}
+}
+
+message ReadStreamRequest {
+  string stream_id = 1;
+}
+
+message ReadStreamResponse {
+  repeated Event events = 1;
+}
+
+message Event {
+  string stream_id = 1;
+  string topic = 2;
+}
