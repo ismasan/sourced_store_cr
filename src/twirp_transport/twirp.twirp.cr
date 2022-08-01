@@ -1,6 +1,8 @@
 # Generated from protos/twirp.proto by twirp.cr
 require "twirp"
 
+require "./struct.pb.cr"
+
 module TwirpTransport
   abstract class TwirpTransport::EventStore
     include Twirp::Service

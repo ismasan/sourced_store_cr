@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "google/protobuf/struct.proto";
+
 package twirp_transport;
 
 service EventStore {
@@ -17,4 +19,5 @@ message ReadStreamResponse {
 message Event {
   string stream_id = 1;
   string topic = 2;
+  google.protobuf.Struct payload = 3;
 }

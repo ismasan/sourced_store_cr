@@ -3,6 +3,8 @@
 
 require 'google/protobuf'
 
+require 'google/protobuf/struct_pb'
+
 Google::Protobuf::DescriptorPool.generated_pool.build do
   add_file("protos/twirp.proto", :syntax => :proto3) do
     add_message "twirp_transport.ReadStreamRequest" do
@@ -14,6 +16,7 @@ Google::Protobuf::DescriptorPool.generated_pool.build do
     add_message "twirp_transport.Event" do
       optional :stream_id, :string, 1
       optional :topic, :string, 2
+      optional :payload, :message, 3, "google.protobuf.Struct"
     end
   end
 end
