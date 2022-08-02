@@ -9,6 +9,7 @@ module SourcedStore
       @@service_name = "sourced_store.twirp_transport.EventStore"
 
       rpc ReadStream, receives: ::SourcedStore::TwirpTransport::ReadStreamRequest, returns: ::SourcedStore::TwirpTransport::ReadStreamResponse
+      rpc AppendToStream, receives: ::SourcedStore::TwirpTransport::AppendToStreamRequest, returns: ::SourcedStore::TwirpTransport::AppendToStreamResponse
     end
   end
 end

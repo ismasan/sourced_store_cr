@@ -7,3 +7,6 @@ shards:
   twirp:
     git: https://github.com/mloughran/twirp.cr.git
     version: 0.2.0
+  logger:
+    git: https://github.com/crystal-lang/logger.cr.git
+    version: 0.1.0

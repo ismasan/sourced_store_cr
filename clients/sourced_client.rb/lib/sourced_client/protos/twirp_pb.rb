@@ -5,24 +5,35 @@ require 'google/protobuf'
 
 Google::Protobuf::DescriptorPool.generated_pool.build do
   add_file("protos/twirp.proto", :syntax => :proto3) do
+    add_message "sourced_store.twirp_transport.Event" do
+      optional :stream_id, :string, 1
+      optional :topic, :string, 2
+      map :payload, :string, :string, 3
+    end
     add_message "sourced_store.twirp_transport.ReadStreamRequest" do
       optional :stream_id, :string, 1
     end
     add_message "sourced_store.twirp_transport.ReadStreamResponse" do
       repeated :events, :message, 1, "sourced_store.twirp_transport.Event"
     end
-    add_message "sourced_store.twirp_transport.Event" do
+    add_message "sourced_store.twirp_transport.AppendToStreamRequest" do
       optional :stream_id, :string, 1
-      optional :topic, :string, 2
-      map :payload, :string, :string, 3
+      optional :expected_seq, :int32, 2
+      repeated :events, :message, 3, "sourced_store.twirp_transport.Event"
+    end
+    add_message "sourced_store.twirp_transport.AppendToStreamResponse" do
+      optional :successful, :bool, 1
+      optional :error, :string, 2
     end
   end
 end
 
 module SourcedClient
   module TwirpTransport
+    Event = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.Event").msgclass
     ReadStreamRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.ReadStreamRequest").msgclass
     ReadStreamResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.ReadStreamResponse").msgclass
-    Event = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.Event").msgclass
+    AppendToStreamRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.AppendToStreamRequest").msgclass
+    AppendToStreamResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.AppendToStreamResponse").msgclass
   end
 end

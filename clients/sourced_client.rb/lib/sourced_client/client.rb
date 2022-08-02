@@ -21,7 +21,11 @@ module SourcedClient
       resp.data.events
     end
 
-    def append_to_stream(stream_id, evts, expected_seq: nil)
+    def append_to_stream(stream_id, events, expected_seq: nil)
+      resp = client.append_to_stream(stream_id: stream_id, expected_seq: expected_seq, events: events)
+      raise TransportError.new(resp) if resp.error
+
+      resp.data.successful
     end
 
     private

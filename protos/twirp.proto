@@ -4,8 +4,16 @@ package sourced_store.twirp_transport;
 
 service EventStore {
   rpc ReadStream(ReadStreamRequest) returns (ReadStreamResponse) {}
+  rpc AppendToStream(AppendToStreamRequest) returns (AppendToStreamResponse) {}
 }
 
+message Event {
+  string stream_id = 1;
+  string topic = 2;
+  map<string, string> payload = 3;
+}
+
+// ReadStream
 message ReadStreamRequest {
   string stream_id = 1;
 }
@@ -14,8 +22,14 @@ message ReadStreamResponse {
   repeated Event events = 1;
 }
 
-message Event {
+// AppendToStream
+message AppendToStreamRequest {
   string stream_id = 1;
-  string topic = 2;
-  map<string, string> payload = 3;
+  int32 expected_seq = 2;
+  repeated Event events = 3;
+}
+
+message AppendToStreamResponse {
+  bool successful = 1;
+  string error = 2;
 }

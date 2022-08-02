@@ -1,5 +1,9 @@
 version: 2.0
 shards:
+  logger:
+    git: https://github.com/crystal-lang/logger.cr.git
+    version: 0.1.0
+
   protobuf:
     git: https://github.com/jeromegn/protobuf.cr.git
     version: 2.2.3

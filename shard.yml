@@ -10,6 +10,8 @@ description: |
 dependencies:
   twirp:
     github: mloughran/twirp.cr
+  logger:
+    github: crystal-lang/logger.cr
 #   pg:
 #     github: will/crystal-pg
 #     version: "~> 0.5"
