@@ -1,32 +1,41 @@
-# # Generated from protos/twirp.proto for twirp_transport
+# # Generated from protos/twirp.proto for sourced_store.twirp_transport
 require "protobuf"
 
-require "./struct.pb.cr"
+module SourcedStore
+  module TwirpTransport
+    struct ReadStreamRequest
+      include ::Protobuf::Message
 
-module TwirpTransport
-  struct ReadStreamRequest
-    include ::Protobuf::Message
-
-    contract_of "proto3" do
-      optional :stream_id, :string, 1
+      contract_of "proto3" do
+        optional :stream_id, :string, 1
+      end
     end
-  end
 
-  struct ReadStreamResponse
-    include ::Protobuf::Message
+    struct ReadStreamResponse
+      include ::Protobuf::Message
 
-    contract_of "proto3" do
-      repeated :events, Event, 1
+      contract_of "proto3" do
+        repeated :events, Event, 1
+      end
     end
-  end
 
-  struct Event
-    include ::Protobuf::Message
+    struct Event
+      include ::Protobuf::Message
 
-    contract_of "proto3" do
-      optional :stream_id, :string, 1
-      optional :topic, :string, 2
-      optional :payload, Google::Protobuf::Struct, 3
+      struct PayloadEntry
+        include ::Protobuf::Message
+
+        contract_of "proto3" do
+          optional :key, :string, 1
+          optional :value, :string, 2
+        end
+      end
+
+      contract_of "proto3" do
+        optional :stream_id, :string, 1
+        optional :topic, :string, 2
+        repeated :payload, Event::PayloadEntry, 3
+      end
     end
   end
 end

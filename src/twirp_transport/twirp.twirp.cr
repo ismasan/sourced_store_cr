@@ -1,14 +1,14 @@
 # Generated from protos/twirp.proto by twirp.cr
 require "twirp"
 
-require "./struct.pb.cr"
+module SourcedStore
+  module TwirpTransport
+    abstract class SourcedStore::TwirpTransport::EventStore
+      include Twirp::Service
 
-module TwirpTransport
-  abstract class TwirpTransport::EventStore
-    include Twirp::Service
+      @@service_name = "sourced_store.twirp_transport.EventStore"
 
-    @@service_name = "twirp_transport.EventStore"
-
-    rpc ReadStream, receives: ::TwirpTransport::ReadStreamRequest, returns: ::TwirpTransport::ReadStreamResponse
+      rpc ReadStream, receives: ::SourcedStore::TwirpTransport::ReadStreamRequest, returns: ::SourcedStore::TwirpTransport::ReadStreamResponse
+    end
   end
 end

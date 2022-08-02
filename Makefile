@@ -3,4 +3,8 @@ twirp:
 	crystal tool format
 
 ruby_client:
-	protoc --ruby_out=clients/ruby --twirp_ruby_out=clients/ruby protos/twirp.proto
+	protoc --ruby_out=clients/sourced_client.rb/lib/sourced_client --twirp_ruby_out=clients/sourced_client.rb/lib/sourced_client protos/twirp.proto
+	sed -i '' 's/SourcedStore/SourcedClient/g' ./clients/sourced_client.rb/lib/sourced_client/protos/*.rb
+
+clean:
+	rm -rf clients/sourced_client.rb/lib/sourced_client/protos
