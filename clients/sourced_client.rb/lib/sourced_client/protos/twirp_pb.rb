@@ -12,6 +12,7 @@ Google::Protobuf::DescriptorPool.generated_pool.build do
     end
     add_message "sourced_store.twirp_transport.ReadStreamRequest" do
       optional :stream_id, :string, 1
+      optional :upto_seq, :int32, 2
     end
     add_message "sourced_store.twirp_transport.ReadStreamResponse" do
       repeated :events, :message, 1, "sourced_store.twirp_transport.Event"

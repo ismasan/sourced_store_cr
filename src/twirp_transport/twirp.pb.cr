@@ -18,6 +18,7 @@ module SourcedStore
 
       contract_of "proto3" do
         optional :stream_id, :string, 1
+        optional :upto_seq, :int32, 2
       end
     end
 

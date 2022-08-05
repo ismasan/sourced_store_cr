@@ -16,6 +16,7 @@ message Event {
 // ReadStream
 message ReadStreamRequest {
   string stream_id = 1;
+  int32 upto_seq = 2;
 }
 
 message ReadStreamResponse {
