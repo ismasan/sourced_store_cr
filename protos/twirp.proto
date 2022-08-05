@@ -10,7 +10,7 @@ service EventStore {
 message Event {
   string stream_id = 1;
   string topic = 2;
-  map<string, string> payload = 3;
+  bytes payload = 3;
 }
 
 // ReadStream

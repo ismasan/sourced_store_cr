@@ -6,19 +6,10 @@ module SourcedStore
     struct Event
       include ::Protobuf::Message
 
-      struct PayloadEntry
-        include ::Protobuf::Message
-
-        contract_of "proto3" do
-          optional :key, :string, 1
-          optional :value, :string, 2
-        end
-      end
-
       contract_of "proto3" do
         optional :stream_id, :string, 1
         optional :topic, :string, 2
-        repeated :payload, Event::PayloadEntry, 3
+        optional :payload, :bytes, 3
       end
     end
 

@@ -8,7 +8,7 @@ Google::Protobuf::DescriptorPool.generated_pool.build do
     add_message "sourced_store.twirp_transport.Event" do
       optional :stream_id, :string, 1
       optional :topic, :string, 2
-      map :payload, :string, :string, 3
+      optional :payload, :bytes, 3
     end
     add_message "sourced_store.twirp_transport.ReadStreamRequest" do
       optional :stream_id, :string, 1

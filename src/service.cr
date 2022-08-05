@@ -11,12 +11,12 @@ module SourcedStore
     end
 
     def read_stream(req : TwirpTransport::ReadStreamRequest) : TwirpTransport::ReadStreamResponse
-      payload = [TwirpTransport::Event::PayloadEntry.new(key: "name", value: "Ismael")]
+      # payload = [TwirpTransport::Event::PayloadEntry.new(key: "name", value: "Ismael")]
 
       event = TwirpTransport::Event.new(
         stream_id: req.stream_id,
         topic: "carts.items.added",
-        payload: payload
+        payload: "{\"name\":\"Ismael\",\"age\":44}".to_slice
       )
 
       TwirpTransport::ReadStreamResponse.new(
