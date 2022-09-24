@@ -10,3 +10,12 @@ shards:
   logger:
     git: https://github.com/crystal-lang/logger.cr.git
     version: 0.1.0
+  db:
+    git: https://github.com/crystal-lang/crystal-db.git
+    version: 0.11.0
+  pg:
+    git: https://github.com/will/crystal-pg.git
+    version: 0.26.0
+  admiral:
+    git: https://github.com/jwaldrip/admiral.cr.git
+    version: 1.12.1
