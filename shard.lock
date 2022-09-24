@@ -1,8 +1,20 @@
 version: 2.0
 shards:
+  admiral:
+    git: https://github.com/jwaldrip/admiral.cr.git
+    version: 1.12.1
+
+  db:
+    git: https://github.com/crystal-lang/crystal-db.git
+    version: 0.11.0
+
   logger:
     git: https://github.com/crystal-lang/logger.cr.git
     version: 0.1.0
+
+  pg:
+    git: https://github.com/will/crystal-pg.git
+    version: 0.26.0
 
   protobuf:
     git: https://github.com/jeromegn/protobuf.cr.git

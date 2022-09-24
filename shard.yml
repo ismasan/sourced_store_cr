@@ -8,17 +8,15 @@ description: |
   A Postgres-backed Event Store, in Crystal
 
 dependencies:
+  admiral:
+    github: jwaldrip/admiral.cr
   twirp:
     github: mloughran/twirp.cr
   logger:
     github: crystal-lang/logger.cr
-#   pg:
-#     github: will/crystal-pg
-#     version: "~> 0.5"
+  pg:
+    github: will/crystal-pg
 
 crystal: 1.2.2
-# development_dependencies:
-#   webmock:
-#     github: manastech/webmock.cr
 
 license: MIT

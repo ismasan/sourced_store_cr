@@ -1,13 +1,16 @@
-require "http/server"
-require "logger"
-require "./service.cr"
+require "admiral"
+require "./cli/serve.cr"
+require "./cli/setup.cr"
 
-logger = Logger.new(STDOUT, level: Logger::INFO)
+module CLI
+  class Root < Admiral::Command
+    register_sub_command serve : Serve, description: "Serve event store"
+    register_sub_command setup : Setup, description: "Setup database"
 
-puts "hello"
-twirp_handler = Twirp::Server.new(SourcedStore::Service.new(logger: logger))
-server = HTTP::Server.new(twirp_handler)
+    def run
+      puts help_sub_commands
+    end
+  end
+end
 
-address = server.bind_tcp 8080
-puts "Listening on http://#{address}"
-server.listen
+CLI::Root.run
