@@ -1,4 +1,5 @@
 syntax = "proto3";
+import "google/protobuf/timestamp.proto";
 
 package sourced_store.twirp_transport;
 
@@ -8,9 +9,13 @@ service EventStore {
 }
 
 message Event {
-  string stream_id = 1;
+  string id = 1;
   string topic = 2;
-  bytes payload = 3;
+  string stream_id = 3;
+  string originator_id = 4;
+  int32 seq = 5;
+  google.protobuf.Timestamp created_at = 6;
+  bytes payload = 7;
 }
 
 // ReadStream

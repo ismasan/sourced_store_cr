@@ -63,16 +63,6 @@ module SourcedStore
 
         TwirpTransport::ReadStreamResponse.new(events: events)
       end
-
-      # event = TwirpTransport::Event.new(
-      #   stream_id: req.stream_id,
-      #   topic: "carts.items.added",
-      #   payload: "{\"name\":\"Ismael\",\"age\":44}".to_slice
-      # )
-
-      # TwirpTransport::ReadStreamResponse.new(
-      #   events: [event]
-      # )
     end
 
     def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse

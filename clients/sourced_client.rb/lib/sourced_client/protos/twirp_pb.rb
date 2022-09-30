@@ -3,12 +3,18 @@
 
 require 'google/protobuf'
 
+require 'google/protobuf/timestamp_pb'
+
 Google::Protobuf::DescriptorPool.generated_pool.build do
   add_file("protos/twirp.proto", :syntax => :proto3) do
     add_message "sourced_store.twirp_transport.Event" do
-      optional :stream_id, :string, 1
+      optional :id, :string, 1
       optional :topic, :string, 2
-      optional :payload, :bytes, 3
+      optional :stream_id, :string, 3
+      optional :originator_id, :string, 4
+      optional :seq, :int32, 5
+      optional :created_at, :message, 6, "google.protobuf.Timestamp"
+      optional :payload, :bytes, 7
     end
     add_message "sourced_store.twirp_transport.ReadStreamRequest" do
       optional :stream_id, :string, 1
