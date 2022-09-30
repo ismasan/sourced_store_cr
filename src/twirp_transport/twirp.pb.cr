@@ -1,15 +1,21 @@
 # # Generated from protos/twirp.proto for sourced_store.twirp_transport
 require "protobuf"
 
+require "./timestamp.pb.cr"
+
 module SourcedStore
   module TwirpTransport
     struct Event
       include ::Protobuf::Message
 
       contract_of "proto3" do
-        optional :stream_id, :string, 1
+        optional :id, :string, 1
         optional :topic, :string, 2
-        optional :payload, :bytes, 3
+        optional :stream_id, :string, 3
+        optional :originator_id, :string, 4
+        optional :seq, :int32, 5
+        optional :created_at, Google::Protobuf::Timestamp, 6
+        optional :payload, :bytes, 7
       end
     end
 

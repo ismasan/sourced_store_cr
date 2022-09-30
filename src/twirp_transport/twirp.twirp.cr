@@ -1,6 +1,8 @@
 # Generated from protos/twirp.proto by twirp.cr
 require "twirp"
 
+require "./timestamp.pb.cr"
+
 module SourcedStore
   module TwirpTransport
     abstract class SourcedStore::TwirpTransport::EventStore

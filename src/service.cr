@@ -15,12 +15,7 @@ module SourcedStore
     getter originator_id : UUID | Nil
     getter seq : Int32
     getter created_at : Time
-    getter producer_id : String | Nil
-    getter elapsed_time : Int32 | Nil
-    getter account_id : String | Nil
-    getter user_id : String | Nil
     getter payload : JSON::Any | Nil
-    getter stack_id : UUID | Nil
 
     def payload_bytes
       payload.to_json.to_slice
@@ -28,23 +23,22 @@ module SourcedStore
   end
 
   class Service < SourcedStore::TwirpTransport::EventStore
-
-    READ_STREAM_QUERY = %(select
+    READ_STREAM_SQL = %(select
             id,
             topic,
             stream_id,
             originator_id,
             seq,
             created_at,
-            producer_id,
-            elapsed_time,
-            account_id,
-            user_id,
-            payload,
-            stack_id
-            from events
+            payload
+            from event_store.events
             where stream_id = $1
             order by seq ASC)
+
+    INSERT_EVENT_SQL = %(insert into event_store.events
+            (id, topic, stream_id, originator_id, seq, created_at, payload)
+            values ($1::uuid, $2, $3, $4, $5, $6::timestamp, $7)
+    )
 
     @db : DB::Database
 
@@ -54,12 +48,15 @@ module SourcedStore
     end
 
     def read_stream(req : TwirpTransport::ReadStreamRequest) : TwirpTransport::ReadStreamResponse
-      # payload = [TwirpTransport::Event::PayloadEntry.new(key: "name", value: "Ismael")]
-      @db.query(READ_STREAM_QUERY, req.stream_id) do |rs|
+      @db.query(READ_STREAM_SQL, req.stream_id) do |rs|
         events = EventRecord.from_rs(rs).map do |rec|
           TwirpTransport::Event.new(
+            id: rec.id.to_s,
             topic: rec.topic,
             stream_id: rec.stream_id,
+            originator_id: rec.originator_id.to_s,
+            seq: rec.seq,
+            created_at: time_to_protobuf_timestamp(rec.created_at),
             payload: rec.payload_bytes
           )
         end
@@ -79,16 +76,55 @@ module SourcedStore
     end
 
     def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse
-      @logger.info "Appending events to stream '#{req.stream_id}'"
-      @logger.info req.events.inspect
+      @logger.info "Appending #{req.events} events to stream '#{req.stream_id}'"
+      @db.transaction do |tx|
+        conn = tx.connection
+        req.events.as(Array(SourcedStore::TwirpTransport::Event)).each do |evt|
+          conn.exec(
+            INSERT_EVENT_SQL,
+            evt.id,
+            evt.topic,
+            evt.stream_id,
+            evt.originator_id,
+            evt.seq,
+            protobuf_timestamp_to_time(evt.created_at),
+            evt.payload
+          )
+        end
+      end
+
       TwirpTransport::AppendToStreamResponse.new(
         successful: true
+      )
+
+    rescue err
+      @logger.error err.inspect
+      TwirpTransport::AppendToStreamResponse.new(
+        successful: false,
+        error: err.message
       )
     end
 
     def stop
-      puts "CLOSING DB"
+      @logger.info "CLOSING DB"
       @db.close
+    end
+
+    private def time_to_protobuf_timestamp(time : Time) Google::Protobuf::Timestamp
+      span = time - Time::UNIX_EPOCH
+      Google::Protobuf::Timestamp.new(
+        seconds: span.total_seconds.to_i,
+        nanos: span.nanoseconds
+      )
+    end
+
+    private def protobuf_timestamp_to_time(pbtime : Google::Protobuf::Timestamp | Nil) : Time
+      pbtime = pbtime.as(Google::Protobuf::Timestamp)
+      span = Time::Span.new(
+        seconds: pbtime.seconds.as(Int64),
+        nanoseconds: pbtime.nanos.as(Int32)
+      )
+      Time::UNIX_EPOCH + span
     end
   end
 end
