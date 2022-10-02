@@ -17,12 +17,14 @@ module SourcedStore
     getter created_at : Time
     getter payload : JSON::Any | Nil
 
-    def payload_bytes
-      payload.to_json.to_slice
+    def payload_bytes : Bytes | Nil
+      payload.is_a?(Nil) ? nil : payload.to_json.to_slice
     end
   end
 
   class Service < SourcedStore::TwirpTransport::EventStore
+    NULL_IN_BYTES = Bytes[110, 117, 108, 108]
+
     READ_STREAM_SQL = %(select
             id,
             topic,
@@ -50,11 +52,14 @@ module SourcedStore
     def read_stream(req : TwirpTransport::ReadStreamRequest) : TwirpTransport::ReadStreamResponse
       @db.query(READ_STREAM_SQL, req.stream_id) do |rs|
         events = EventRecord.from_rs(rs).map do |rec|
+          originator_id : String | Nil = rec.originator_id.to_s
+          originator_id = nil if originator_id == ""
+
           TwirpTransport::Event.new(
             id: rec.id.to_s,
             topic: rec.topic,
             stream_id: rec.stream_id,
-            originator_id: rec.originator_id.to_s,
+            originator_id: originator_id,
             seq: rec.seq,
             created_at: time_to_protobuf_timestamp(rec.created_at),
             payload: rec.payload_bytes
@@ -98,6 +103,13 @@ module SourcedStore
     def stop
       @logger.info "CLOSING DB"
       @db.close
+    end
+
+    def reset!
+      return unless ENV["ENV"] == "test"
+
+      @logger.info "Resetting DB. Careful!"
+      @db.exec("DELETE FROM event_store.events")
     end
 
     private def time_to_protobuf_timestamp(time : Time) Google::Protobuf::Timestamp

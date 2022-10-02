@@ -8,3 +8,6 @@ ruby_client:
 
 clean:
 	rm -rf clients/sourced_client.rb/lib/sourced_client/protos
+
+test:
+	watchexec -e cr 'crystal spec'
