@@ -50,6 +50,19 @@ module SourcedStore
             values ($1::uuid, $2, $3, $4, $5, $6::timestamp, $7)
     )
 
+    READ_CATEGORY_SQL = %(select
+            id,
+            topic,
+            stream_id,
+            originator_id,
+            global_seq,
+            seq,
+            created_at,
+            payload
+            from event_store.events
+            where event_store.event_category(topic) = $1
+            order by global_seq ASC)
+
     @db : DB::Database
 
     def initialize(logger : Logger, db_url : String)
@@ -115,6 +128,28 @@ module SourcedStore
           message: err.message
         )
       )
+    end
+
+    def read_category(req : SourcedStore::TwirpTransport::ReadCategoryRequest) : SourcedStore::TwirpTransport::ReadCategoryResponse
+      @db.query(READ_CATEGORY_SQL, req.category) do |rs|
+        events = EventRecord.from_rs(rs).map do |rec|
+          originator_id : String | Nil = rec.originator_id.to_s
+          originator_id = nil if originator_id == ""
+
+          TwirpTransport::Event.new(
+            id: rec.id.to_s,
+            topic: rec.topic,
+            stream_id: rec.stream_id,
+            originator_id: originator_id,
+            global_seq: rec.global_seq,
+            seq: rec.seq,
+            created_at: time_to_protobuf_timestamp(rec.created_at),
+            payload: rec.payload_bytes
+          )
+        end
+
+        TwirpTransport::ReadCategoryResponse.new(events: events)
+      end
     end
 
     def stop

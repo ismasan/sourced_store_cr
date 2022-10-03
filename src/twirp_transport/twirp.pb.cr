@@ -64,5 +64,21 @@ module SourcedStore
         optional :error, Error, 2
       end
     end
+
+    struct ReadCategoryRequest
+      include ::Protobuf::Message
+
+      contract_of "proto3" do
+        optional :category, :string, 1
+      end
+    end
+
+    struct ReadCategoryResponse
+      include ::Protobuf::Message
+
+      contract_of "proto3" do
+        repeated :events, Event, 1
+      end
+    end
   end
 end
