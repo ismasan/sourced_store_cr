@@ -13,9 +13,10 @@ module SourcedStore
         optional :topic, :string, 2
         optional :stream_id, :string, 3
         optional :originator_id, :string, 4
-        optional :seq, :int32, 5
-        optional :created_at, Google::Protobuf::Timestamp, 6
-        optional :payload, :bytes, 7
+        optional :global_seq, :int64, 5
+        optional :seq, :int32, 6
+        optional :created_at, Google::Protobuf::Timestamp, 7
+        optional :payload, :bytes, 8
       end
     end
 

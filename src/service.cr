@@ -13,6 +13,7 @@ module SourcedStore
     getter topic : String
     getter stream_id : String
     getter originator_id : UUID | Nil
+    getter global_seq : Int64
     getter seq : Int32
     getter created_at : Time
     getter payload : JSON::Any | Nil
@@ -34,6 +35,7 @@ module SourcedStore
             topic,
             stream_id,
             originator_id,
+            global_seq,
             seq,
             created_at,
             payload
@@ -41,7 +43,7 @@ module SourcedStore
             where stream_id = $1)
 
     READ_STREAM_SQL_WHERE_UPTO = %(and seq <= $2)
-    READ_STREAM_SQL_ORDER = %(order by seq ASC)
+    READ_STREAM_SQL_ORDER      = %(order by seq ASC)
 
     INSERT_EVENT_SQL = %(insert into event_store.events
             (id, topic, stream_id, originator_id, seq, created_at, payload)
@@ -66,6 +68,7 @@ module SourcedStore
             topic: rec.topic,
             stream_id: rec.stream_id,
             originator_id: originator_id,
+            global_seq: rec.global_seq,
             seq: rec.seq,
             created_at: time_to_protobuf_timestamp(rec.created_at),
             payload: rec.payload_bytes

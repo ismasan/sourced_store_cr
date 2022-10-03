@@ -66,7 +66,8 @@ describe SourcedStore::Service do
       events = read_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
       sent_events = req.events.as(Array(SourcedStore::TwirpTransport::Event))
       events.size.should eq(2)
-      events.first.should eq(sent_events.first)
+      assert_same_event(events.first, sent_events.first)
+      (events[0].global_seq.as(Int64) < events[1].global_seq.as(Int64)).should eq(true)
     end
 
     it "fails if expected_seq doesn't match" do
@@ -105,7 +106,7 @@ describe SourcedStore::Service do
       events = read_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
       sent_events = req.events.as(Array(SourcedStore::TwirpTransport::Event))
       events.size.should eq(1)
-      events.first.should eq(sent_events.first)
+      assert_same_event(events.first, sent_events.first)
     end
   end
 end
@@ -128,4 +129,14 @@ private def build_event(
     created_at: created_at,
     payload: payload
   )
+end
+
+private def assert_same_event(e1, e2)
+  e1.id.should eq(e2.id)
+  e1.topic.should eq(e2.topic)
+  e1.stream_id.should eq(e2.stream_id)
+  e1.originator_id.should eq(e2.originator_id)
+  e1.seq.should eq(e2.seq)
+  e1.created_at.should eq(e2.created_at)
+  e1.payload.should eq(e2.payload)
 end
