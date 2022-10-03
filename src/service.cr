@@ -38,8 +38,10 @@ module SourcedStore
             created_at,
             payload
             from event_store.events
-            where stream_id = $1
-            order by seq ASC)
+            where stream_id = $1)
+
+    READ_STREAM_SQL_WHERE_UPTO = %(and seq <= $2)
+    READ_STREAM_SQL_ORDER = %(order by seq ASC)
 
     INSERT_EVENT_SQL = %(insert into event_store.events
             (id, topic, stream_id, originator_id, seq, created_at, payload)
@@ -54,7 +56,7 @@ module SourcedStore
     end
 
     def read_stream(req : TwirpTransport::ReadStreamRequest) : TwirpTransport::ReadStreamResponse
-      @db.query(READ_STREAM_SQL, req.stream_id) do |rs|
+      read_stream_query(req) do |rs|
         events = EventRecord.from_rs(rs).map do |rec|
           originator_id : String | Nil = rec.originator_id.to_s
           originator_id = nil if originator_id == ""
@@ -140,6 +142,19 @@ module SourcedStore
         nanoseconds: pbtime.nanos.as(Int32)
       )
       Time::UNIX_EPOCH + span
+    end
+
+    private def read_stream_query(req : TwirpTransport::ReadStreamRequest, &block : ::DB::ResultSet -> TwirpTransport::ReadStreamResponse) : TwirpTransport::ReadStreamResponse
+      sql = [READ_STREAM_SQL] of String
+
+      if req.upto_seq
+        sql << READ_STREAM_SQL_WHERE_UPTO
+        sql << READ_STREAM_SQL_ORDER
+        @db.query(sql.join(" "), req.stream_id, req.upto_seq, &block)
+      else
+        sql << READ_STREAM_SQL_ORDER
+        @db.query(sql.join(" "), req.stream_id, &block)
+      end
     end
   end
 end

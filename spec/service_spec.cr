@@ -92,6 +92,21 @@ describe SourcedStore::Service do
       error.code.should eq("concurrent_write_lock_error")
       error.message.should eq("duplicate key value violates unique constraint \"unique_index_on_event_seqs\"")
     end
+
+    it "reads :upto_seq" do
+      service.append_to_stream(req: req)
+      read_resp = service.read_stream(
+        SourcedStore::TwirpTransport::ReadStreamRequest.new(
+          stream_id: stream_id,
+          upto_seq: 1
+        )
+      )
+      read_resp.should be_a(SourcedStore::TwirpTransport::ReadStreamResponse)
+      events = read_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
+      sent_events = req.events.as(Array(SourcedStore::TwirpTransport::Event))
+      events.size.should eq(1)
+      events.first.should eq(sent_events.first)
+    end
   end
 end
 
