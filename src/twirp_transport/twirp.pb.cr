@@ -19,6 +19,15 @@ module SourcedStore
       end
     end
 
+    struct Error
+      include ::Protobuf::Message
+
+      contract_of "proto3" do
+        optional :code, :string, 1
+        optional :message, :string, 2
+      end
+    end
+
     struct ReadStreamRequest
       include ::Protobuf::Message
 
@@ -51,7 +60,7 @@ module SourcedStore
 
       contract_of "proto3" do
         optional :successful, :bool, 1
-        optional :error, :string, 2
+        optional :error, Error, 2
       end
     end
   end

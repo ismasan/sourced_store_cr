@@ -18,6 +18,11 @@ message Event {
   bytes payload = 7;
 }
 
+message Error {
+  string code = 1;
+  string message = 2;
+}
+
 // ReadStream
 message ReadStreamRequest {
   string stream_id = 1;
@@ -37,5 +42,5 @@ message AppendToStreamRequest {
 
 message AppendToStreamResponse {
   bool successful = 1;
-  string error = 2;
+  Error error = 2;
 }

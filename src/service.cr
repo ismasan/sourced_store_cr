@@ -23,7 +23,11 @@ module SourcedStore
   end
 
   class Service < SourcedStore::TwirpTransport::EventStore
-    NULL_IN_BYTES = Bytes[110, 117, 108, 108]
+    module ErrorCodes
+      CONCURRENT_WRITE_LOCK_ERROR = "concurrent_write_lock_error"
+    end
+
+    PG_EVENT_SEQ_INDEX_EXP = /unique_index_on_event_seqs/
 
     READ_STREAM_SQL = %(select
             id,
@@ -91,12 +95,20 @@ module SourcedStore
       TwirpTransport::AppendToStreamResponse.new(
         successful: true
       )
-
     rescue err
       @logger.error err.inspect
+      err_code = case err.message
+                 when PG_EVENT_SEQ_INDEX_EXP
+                   ErrorCodes::CONCURRENT_WRITE_LOCK_ERROR
+                 else
+                   "error"
+                 end
       TwirpTransport::AppendToStreamResponse.new(
         successful: false,
-        error: err.message
+        error: TwirpTransport::Error.new(
+          code: err_code,
+          message: err.message
+        )
       )
     end
 
@@ -112,7 +124,8 @@ module SourcedStore
       @db.exec("DELETE FROM event_store.events")
     end
 
-    private def time_to_protobuf_timestamp(time : Time) Google::Protobuf::Timestamp
+    private def time_to_protobuf_timestamp(time : Time)
+      Google::Protobuf::Timestamp
       span = time - Time::UNIX_EPOCH
       Google::Protobuf::Timestamp.new(
         seconds: span.total_seconds.to_i,

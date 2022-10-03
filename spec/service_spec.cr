@@ -88,7 +88,9 @@ describe SourcedStore::Service do
       )
       resp = service.append_to_stream(req: new_req)
       resp.successful.should eq(false)
-      resp.error.should eq("duplicate key value violates unique constraint \"unique_index_on_entity_seqs\"")
+      error = resp.error.as(SourcedStore::TwirpTransport::Error)
+      error.code.should eq("concurrent_write_lock_error")
+      error.message.should eq("duplicate key value violates unique constraint \"unique_index_on_event_seqs\"")
     end
   end
 end

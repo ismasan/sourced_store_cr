@@ -4,7 +4,6 @@ require "pg"
 
 module CLI
   class Setup < Admiral::Command
-
     SQL_SCHEMA = <<-SQL
     CREATE SCHEMA IF NOT EXISTS event_store;
     SQL
@@ -46,7 +45,7 @@ module CLI
     # Crystal's DB#exec can only take single commands :(
     SQL_INDICES = [
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_event_ids ON event_store.events (id)),
-      %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_entity_seqs ON event_store.events (stream_id, seq)),
+      %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_event_seqs ON event_store.events (stream_id, seq)),
       %(CREATE INDEX IF NOT EXISTS index_on_event_categories ON event_store.events (event_store.event_category(topic))),
     ]
 
