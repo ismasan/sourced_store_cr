@@ -53,6 +53,7 @@ message ReadCategoryRequest {
   int32 batch_size = 3;
   string consumer_group = 4;
   string consumer_id = 5;
+  int32 wait_timeout = 6;
 }
 
 message ReadCategoryResponse {

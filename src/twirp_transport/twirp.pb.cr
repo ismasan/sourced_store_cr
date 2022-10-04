@@ -74,6 +74,7 @@ module SourcedStore
         optional :batch_size, :int32, 3
         optional :consumer_group, :string, 4
         optional :consumer_id, :string, 5
+        optional :wait_timeout, :int32, 6
       end
     end
 

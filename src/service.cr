@@ -63,23 +63,26 @@ module SourcedStore
       LIMIT $5
     )
 
-    READ_CATEGORY_AND_AFTER_ID_SQL = %(AND global_seq > (SELECT global_seq FROM event_store.events WHERE id = $2))
-    READ_CATEGORY_ORDER_SQL        = %(ORDER BY global_seq ASC)
-
     @db : DB::Database
     @consumer_groups : ConsumerGroups
 
     def initialize(logger : Logger, db_url : String)
       @logger = logger
-      @db = DB.open(db_url)
+      @db_url = db_url
+      @db = DB.open(@db_url)
       @consumer_groups = ConsumerGroups.new(logger: @logger)
     end
 
     def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse
+      events = req.events.as(Array(SourcedStore::TwirpTransport::Event))
+      if !events.any?
+        return TwirpTransport::AppendToStreamResponse.new(successful: true)
+      end
+
       @logger.info "Appending #{req.events} events to stream '#{req.stream_id}'"
       @db.transaction do |tx|
         conn = tx.connection
-        req.events.as(Array(SourcedStore::TwirpTransport::Event)).each do |evt|
+        events.each do |evt|
           conn.exec(
             INSERT_EVENT_SQL,
             evt.id,
@@ -91,11 +94,11 @@ module SourcedStore
             evt.payload
           )
         end
+
+        conn.exec("SELECT pg_notify($1, $2)", category_name(events.first.topic.as(String)), events.first.id)
       end
 
-      TwirpTransport::AppendToStreamResponse.new(
-        successful: true
-      )
+      TwirpTransport::AppendToStreamResponse.new(successful: true)
     rescue err
       @logger.error err.inspect
       err_code = case err.message
@@ -134,25 +137,33 @@ module SourcedStore
     # $4 after_global_seq
     # $5 batch_size
     def read_category(req : SourcedStore::TwirpTransport::ReadCategoryRequest) : SourcedStore::TwirpTransport::ReadCategoryResponse
+      category = req.category.as(String)
       consumer_group : String = req.consumer_group || "global-group"
       consumer_id : String = req.consumer_id || "global-consumer"
       batch_size : Int32 = req.batch_size || 50
       after_global_seq : Int64 = req.after_global_seq || Int64.new(0)
+      wait_timeout : Float64 = (req.wait_timeout || 10000.0).to_f / 1000 # milliseconds
 
       sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL] of String
 
       consumer = @consumer_groups.register(consumer_group, consumer_id)
-      query = @db.query(
-        sql.join(" "),
-        req.category,
-        consumer.group_size,
-        consumer.number,
-        after_global_seq,
-        batch_size
-      )
-      events = hydrate_events(query)
+      events = read_category_with_consumer(category, consumer, after_global_seq, batch_size)
       if events.any?
         @consumer_groups.notify_consumer(consumer, events.last.global_seq.as(Int64))
+      else # block and poll again
+        chan = Channel(Nil).new
+        timeout = spawn do
+          sleep wait_timeout
+          chan.send(nil)
+        end
+
+        listen_conn = PG.connect_listen(@db_url, channels: [category], blocking: false) do |n|
+          @logger.info "PONG #{n.inspect}"
+          chan.send nil
+        end
+        chan.receive
+        listen_conn.close
+        events = read_category_with_consumer(category, consumer, after_global_seq, batch_size)
       end
 
       TwirpTransport::ReadCategoryResponse.new(events: events)
@@ -167,6 +178,7 @@ module SourcedStore
       return unless ENV["ENV"] == "test"
 
       @logger.info "Resetting DB. Careful!"
+      @consumer_groups = ConsumerGroups.new(logger: @logger)
       @db.exec("TRUNCATE event_store.events RESTART IDENTITY")
     end
 
@@ -205,5 +217,28 @@ module SourcedStore
         )
       end
     end
+
+    private def category_name(topic : String) : String
+      topic.split(".").first
+    end
+
+    private def read_category_with_consumer(
+      category : String,
+      consumer : SourcedStore::ConsumerGroups::Consumer,
+      after_global_seq : Int64,
+      batch_size : Int32
+    ) : Array(TwirpTransport::Event)
+      sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL] of String
+      query = @db.query(
+        sql.join(" "),
+        category,
+        consumer.group_size,
+        consumer.number,
+        after_global_seq,
+        batch_size
+      )
+      hydrate_events(query)
+    end
+
   end
 end

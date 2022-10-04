@@ -125,11 +125,9 @@ describe SourcedStore::Service do
   end
 
   describe "#read_category" do
-    before_all do
-      service.append_to_stream(req: append_req)
-    end
-
     it "reads category stream" do
+      service.append_to_stream(req: append_req)
+
       resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders"
       ))
@@ -142,6 +140,8 @@ describe SourcedStore::Service do
     end
 
     it "queries after a given event global seq" do
+      service.append_to_stream(req: append_req)
+
       resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders"
       ))
@@ -158,6 +158,8 @@ describe SourcedStore::Service do
     end
 
     it "partitions stream by consumers" do
+      service.append_to_stream(req: append_req)
+
       consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
@@ -189,6 +191,34 @@ describe SourcedStore::Service do
     end
 
     it "blocks and waits for new events if none found yet" do
+      service.reset!
+
+      spawn do
+        sleep 0.01
+        service.append_to_stream(req: append_req)
+      end
+
+      consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+        category: "orders",
+        consumer_group: "sale-report",
+        consumer_id: "sale-report-1"
+      ))
+
+      events = consumer_1_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
+      events.size.should eq(3)
+    end
+
+    it "returns if timeout exceeded after polling" do
+      service.reset!
+      consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+        category: "orders",
+        consumer_group: "sale-report",
+        consumer_id: "sale-report-1",
+        wait_timeout: 5 # milliseconds
+      ))
+
+      events = consumer_1_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
+      events.size.should eq(0)
     end
   end
 end
