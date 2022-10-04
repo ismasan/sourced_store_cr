@@ -16,9 +16,9 @@ module SourcedStore
         consumer = @consumers[consumer_id]?
         return consumer if consumer
 
-        @count += 1
-        consumer = Consumer.new(group_name: name, id: consumer_id, number: @count)
+        consumer = Consumer.new(group: self, id: consumer_id, number: @count)
         @consumers[consumer_id] = consumer
+        @count += 1
         consumer
       end
 
@@ -26,6 +26,10 @@ module SourcedStore
         return ZERO64 unless @consumers.any?
 
         @consumers.values.sort_by { |c| c.last_global_seq }.first.last_global_seq
+      end
+
+      def size
+        @count
       end
     end
 
@@ -35,8 +39,14 @@ module SourcedStore
       getter number : Int32
       getter last_global_seq : Int64
 
-      def initialize(@group_name, @id, @number)
+      def initialize(group : Group, @id, @number)
+        @group = group
+        @group_name = group.name
         @last_global_seq = ZERO64
+      end
+
+      def group_size : Int32
+        @group.size
       end
 
       def notify(seq : Int64) : Consumer
