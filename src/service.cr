@@ -1,5 +1,4 @@
 require "twirp"
-require "twirp/server"
 require "db"
 require "pg"
 

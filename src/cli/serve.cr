@@ -1,4 +1,5 @@
 require "http/server"
+require "twirp/server"
 require "logger"
 require "admiral"
 require "../service.cr"
