@@ -49,6 +49,10 @@ message AppendToStreamResponse {
 // ReadCategory
 message ReadCategoryRequest {
   string category = 1;
+  int64 after_global_seq = 2;
+  int32 batch_size = 3;
+  string consumer_group = 4;
+  string consumer_id = 5;
 }
 
 message ReadCategoryResponse {

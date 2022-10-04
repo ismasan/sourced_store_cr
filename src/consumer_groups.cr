@@ -53,6 +53,10 @@ module SourcedStore
         @last_global_seq = seq
         self
       end
+
+      def info : String
+        "consumer #{group_name}/#{id} (#{number}) on #{last_global_seq}"
+      end
     end
 
     def initialize(logger : Logger)
@@ -78,7 +82,7 @@ module SourcedStore
     def notify_consumer(consumer : Consumer, last_global_seq : Int64) : Consumer
       register(consumer.group_name, consumer.id) do |cn|
         cn.notify(last_global_seq)
-        @logger.info "consumer #{cn.group_name}/#{cn.id} (#{cn.number}) on #{cn.last_global_seq}"
+        @logger.info cn.info
         cn
       end
     end

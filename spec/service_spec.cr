@@ -141,7 +141,51 @@ describe SourcedStore::Service do
       assert_same_event(events[2], sent_events[3])
     end
 
+    it "queries after a given event global seq" do
+      resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+        category: "orders"
+      ))
+      all_events = resp.events.as(Array(SourcedStore::TwirpTransport::Event))
+      all_events.size.should eq(3)
+
+      resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+        category: "orders",
+        after_global_seq: all_events[0].global_seq
+      ))
+      events = resp.events.as(Array(SourcedStore::TwirpTransport::Event))
+      assert_same_event(events[0], all_events[1])
+      assert_same_event(events[1], all_events[2])
+    end
+
     it "partitions stream by consumers" do
+      consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+        category: "orders",
+        consumer_group: "sale-report",
+        consumer_id: "sale-report-1"
+      ))
+
+      # Group starts with 1 consumer/partition
+      consumer_1_events = consumer_1_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
+      consumer_1_events.size.should eq(3)
+
+      consumer_2_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+        category: "orders",
+        consumer_group: "sale-report",
+        consumer_id: "sale-report-2"
+      ))
+
+      consumer_2_events = consumer_2_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
+      consumer_2_events.size.should eq(1)
+
+      # Group now has 2 partitions, so consumer 1 gets a subset of events
+      consumer_1b_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+        category: "orders",
+        consumer_group: "sale-report",
+        consumer_id: "sale-report-1"
+      ))
+
+      consumer_1b_events = consumer_1b_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
+      consumer_1b_events.size.should eq(2)
     end
 
     it "blocks and waits for new events if none found yet" do

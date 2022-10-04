@@ -70,6 +70,10 @@ module SourcedStore
 
       contract_of "proto3" do
         optional :category, :string, 1
+        optional :after_global_seq, :int64, 2
+        optional :batch_size, :int32, 3
+        optional :consumer_group, :string, 4
+        optional :consumer_id, :string, 5
       end
     end
 

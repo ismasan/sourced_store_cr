@@ -2,6 +2,7 @@ require "twirp"
 require "db"
 require "pg"
 
+require "./consumer_groups"
 require "./twirp_transport/twirp.twirp.cr"
 require "./twirp_transport/twirp.pb.cr"
 
@@ -40,23 +41,38 @@ module SourcedStore
             payload
             from event_store.events)
 
-    READ_STREAM_WHERE_SQL = %(WHERE stream_id = $1)
+    READ_STREAM_WHERE_SQL    = %(WHERE stream_id = $1)
     READ_STREAM_AND_UPTO_SQL = %(AND seq <= $2)
-    READ_STREAM_ORDER_SQL = %(ORDER BY seq ASC)
+    READ_STREAM_ORDER_SQL    = %(ORDER BY seq ASC)
 
     INSERT_EVENT_SQL = %(insert into event_store.events
             (id, topic, stream_id, originator_id, seq, created_at, payload)
             values ($1::uuid, $2, $3, $4, $5, $6::timestamp, $7)
     )
 
-    READ_CATEGORY_WHERE_SQL = %(WHERE event_store.event_category(topic) = $1)
-    READ_CATEGORY_ORDER_SQL = %(ORDER BY global_seq ASC)
+    # $1 category
+    # $2 group size
+    # $3 consumer number
+    # $4 after_global_seq
+    # $5 batch_size
+    READ_CATEGORY_WHERE_SQL = %(
+      WHERE event_store.event_category(topic) = $1
+      AND MOD(event_store.hash_64(stream_id::varchar), $2) = $3
+      AND global_seq > $4
+      ORDER BY global_seq ASC
+      LIMIT $5
+    )
+
+    READ_CATEGORY_AND_AFTER_ID_SQL = %(AND global_seq > (SELECT global_seq FROM event_store.events WHERE id = $2))
+    READ_CATEGORY_ORDER_SQL        = %(ORDER BY global_seq ASC)
 
     @db : DB::Database
+    @consumer_groups : ConsumerGroups
 
     def initialize(logger : Logger, db_url : String)
       @logger = logger
       @db = DB.open(db_url)
+      @consumer_groups = ConsumerGroups.new(logger: @logger)
     end
 
     def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse
@@ -101,20 +117,44 @@ module SourcedStore
       sql = [SELECT_EVENTS_SQL, READ_STREAM_WHERE_SQL] of String
 
       events = if req.upto_seq
-        sql << READ_STREAM_AND_UPTO_SQL
-        sql << READ_STREAM_ORDER_SQL
-        hydrate_events(@db.query(sql.join(" "), req.stream_id, req.upto_seq))
-      else
-        sql << READ_STREAM_ORDER_SQL
-        hydrate_events(@db.query(sql.join(" "), req.stream_id))
-      end
+                 sql << READ_STREAM_AND_UPTO_SQL
+                 sql << READ_STREAM_ORDER_SQL
+                 hydrate_events(@db.query(sql.join(" "), req.stream_id, req.upto_seq))
+               else
+                 sql << READ_STREAM_ORDER_SQL
+                 hydrate_events(@db.query(sql.join(" "), req.stream_id))
+               end
 
       TwirpTransport::ReadStreamResponse.new(events: events)
     end
 
+    # $1 category
+    # $2 group size
+    # $3 consumer number
+    # $4 after_global_seq
+    # $5 batch_size
     def read_category(req : SourcedStore::TwirpTransport::ReadCategoryRequest) : SourcedStore::TwirpTransport::ReadCategoryResponse
-      sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL, READ_CATEGORY_ORDER_SQL] of String
-      events = hydrate_events(@db.query(sql.join(" "), req.category))
+      consumer_group : String = req.consumer_group || "global-group"
+      consumer_id : String = req.consumer_id || "global-consumer"
+      batch_size : Int32 = req.batch_size || 50
+      after_global_seq : Int64 = req.after_global_seq || Int64.new(0)
+
+      sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL] of String
+
+      consumer = @consumer_groups.register(consumer_group, consumer_id)
+      query = @db.query(
+        sql.join(" "),
+        req.category,
+        consumer.group_size,
+        consumer.number,
+        after_global_seq,
+        batch_size
+      )
+      events = hydrate_events(query)
+      if events.any?
+        @consumer_groups.notify_consumer(consumer, events.last.global_seq.as(Int64))
+      end
+
       TwirpTransport::ReadCategoryResponse.new(events: events)
     end
 
@@ -127,7 +167,7 @@ module SourcedStore
       return unless ENV["ENV"] == "test"
 
       @logger.info "Resetting DB. Careful!"
-      @db.exec("DELETE FROM event_store.events")
+      @db.exec("TRUNCATE event_store.events RESTART IDENTITY")
     end
 
     private def time_to_protobuf_timestamp(time : Time)
