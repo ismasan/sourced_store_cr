@@ -30,7 +30,7 @@ module SourcedStore
 
     PG_EVENT_SEQ_INDEX_EXP = /unique_index_on_event_seqs/
 
-    READ_STREAM_SQL = %(select
+    SELECT_EVENTS_SQL = %(select
             id,
             topic,
             stream_id,
@@ -39,57 +39,25 @@ module SourcedStore
             seq,
             created_at,
             payload
-            from event_store.events
-            where stream_id = $1)
+            from event_store.events)
 
-    READ_STREAM_SQL_WHERE_UPTO = %(and seq <= $2)
-    READ_STREAM_SQL_ORDER      = %(order by seq ASC)
+    READ_STREAM_WHERE_SQL = %(WHERE stream_id = $1)
+    READ_STREAM_AND_UPTO_SQL = %(AND seq <= $2)
+    READ_STREAM_ORDER_SQL = %(ORDER BY seq ASC)
 
     INSERT_EVENT_SQL = %(insert into event_store.events
             (id, topic, stream_id, originator_id, seq, created_at, payload)
             values ($1::uuid, $2, $3, $4, $5, $6::timestamp, $7)
     )
 
-    READ_CATEGORY_SQL = %(select
-            id,
-            topic,
-            stream_id,
-            originator_id,
-            global_seq,
-            seq,
-            created_at,
-            payload
-            from event_store.events
-            where event_store.event_category(topic) = $1
-            order by global_seq ASC)
+    READ_CATEGORY_WHERE_SQL = %(WHERE event_store.event_category(topic) = $1)
+    READ_CATEGORY_ORDER_SQL = %(ORDER BY global_seq ASC)
 
     @db : DB::Database
 
     def initialize(logger : Logger, db_url : String)
       @logger = logger
       @db = DB.open(db_url)
-    end
-
-    def read_stream(req : TwirpTransport::ReadStreamRequest) : TwirpTransport::ReadStreamResponse
-      read_stream_query(req) do |rs|
-        events = EventRecord.from_rs(rs).map do |rec|
-          originator_id : String | Nil = rec.originator_id.to_s
-          originator_id = nil if originator_id == ""
-
-          TwirpTransport::Event.new(
-            id: rec.id.to_s,
-            topic: rec.topic,
-            stream_id: rec.stream_id,
-            originator_id: originator_id,
-            global_seq: rec.global_seq,
-            seq: rec.seq,
-            created_at: time_to_protobuf_timestamp(rec.created_at),
-            payload: rec.payload_bytes
-          )
-        end
-
-        TwirpTransport::ReadStreamResponse.new(events: events)
-      end
     end
 
     def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse
@@ -130,26 +98,25 @@ module SourcedStore
       )
     end
 
-    def read_category(req : SourcedStore::TwirpTransport::ReadCategoryRequest) : SourcedStore::TwirpTransport::ReadCategoryResponse
-      @db.query(READ_CATEGORY_SQL, req.category) do |rs|
-        events = EventRecord.from_rs(rs).map do |rec|
-          originator_id : String | Nil = rec.originator_id.to_s
-          originator_id = nil if originator_id == ""
+    def read_stream(req : TwirpTransport::ReadStreamRequest) : TwirpTransport::ReadStreamResponse
+      sql = [SELECT_EVENTS_SQL, READ_STREAM_WHERE_SQL] of String
 
-          TwirpTransport::Event.new(
-            id: rec.id.to_s,
-            topic: rec.topic,
-            stream_id: rec.stream_id,
-            originator_id: originator_id,
-            global_seq: rec.global_seq,
-            seq: rec.seq,
-            created_at: time_to_protobuf_timestamp(rec.created_at),
-            payload: rec.payload_bytes
-          )
-        end
-
-        TwirpTransport::ReadCategoryResponse.new(events: events)
+      events = if req.upto_seq
+        sql << READ_STREAM_AND_UPTO_SQL
+        sql << READ_STREAM_ORDER_SQL
+        hydrate_events(@db.query(sql.join(" "), req.stream_id, req.upto_seq))
+      else
+        sql << READ_STREAM_ORDER_SQL
+        hydrate_events(@db.query(sql.join(" "), req.stream_id))
       end
+
+      TwirpTransport::ReadStreamResponse.new(events: events)
+    end
+
+    def read_category(req : SourcedStore::TwirpTransport::ReadCategoryRequest) : SourcedStore::TwirpTransport::ReadCategoryResponse
+      sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL, READ_CATEGORY_ORDER_SQL] of String
+      events = hydrate_events(@db.query(sql.join(" "), req.category))
+      TwirpTransport::ReadCategoryResponse.new(events: events)
     end
 
     def stop
@@ -182,16 +149,21 @@ module SourcedStore
       Time::UNIX_EPOCH + span
     end
 
-    private def read_stream_query(req : TwirpTransport::ReadStreamRequest, &block : ::DB::ResultSet -> TwirpTransport::ReadStreamResponse) : TwirpTransport::ReadStreamResponse
-      sql = [READ_STREAM_SQL] of String
+    private def hydrate_events(rs : ::DB::ResultSet) : Array(TwirpTransport::Event)
+      EventRecord.from_rs(rs).map do |rec|
+        originator_id : String | Nil = rec.originator_id.to_s
+        originator_id = nil if originator_id == ""
 
-      if req.upto_seq
-        sql << READ_STREAM_SQL_WHERE_UPTO
-        sql << READ_STREAM_SQL_ORDER
-        @db.query(sql.join(" "), req.stream_id, req.upto_seq, &block)
-      else
-        sql << READ_STREAM_SQL_ORDER
-        @db.query(sql.join(" "), req.stream_id, &block)
+        TwirpTransport::Event.new(
+          id: rec.id.to_s,
+          topic: rec.topic,
+          stream_id: rec.stream_id,
+          originator_id: originator_id,
+          global_seq: rec.global_seq,
+          seq: rec.seq,
+          created_at: time_to_protobuf_timestamp(rec.created_at),
+          payload: rec.payload_bytes
+        )
       end
     end
   end
