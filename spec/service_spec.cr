@@ -143,7 +143,8 @@ describe SourcedStore::Service do
       service.append_to_stream(req: append_req)
 
       resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
-        category: "orders"
+        category: "orders",
+        after_global_seq: Int64.new(0)
       ))
       all_events = resp.events.as(Array(SourcedStore::TwirpTransport::Event))
       all_events.size.should eq(3)
@@ -163,7 +164,8 @@ describe SourcedStore::Service do
       consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "sale-report-1"
+        consumer_id: "sale-report-1",
+        after_global_seq: Int64.new(0)
       ))
 
       # Group starts with 1 consumer/partition
@@ -173,7 +175,8 @@ describe SourcedStore::Service do
       consumer_2_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "sale-report-2"
+        consumer_id: "sale-report-2",
+        after_global_seq: Int64.new(0)
       ))
 
       consumer_2_events = consumer_2_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
@@ -183,7 +186,8 @@ describe SourcedStore::Service do
       consumer_1b_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "sale-report-1"
+        consumer_id: "sale-report-1",
+        after_global_seq: Int64.new(0)
       ))
 
       consumer_1b_events = consumer_1b_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
@@ -201,7 +205,8 @@ describe SourcedStore::Service do
       consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "sale-report-1"
+        consumer_id: "sale-report-1",
+        after_global_seq: Int64.new(0)
       ))
 
       events = consumer_1_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
@@ -214,12 +219,19 @@ describe SourcedStore::Service do
         category: "orders",
         consumer_group: "sale-report",
         consumer_id: "sale-report-1",
-        wait_timeout: 5 # milliseconds
+        wait_timeout: 5, # milliseconds
+        after_global_seq: Int64.new(0)
       ))
 
       events = consumer_1_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
       events.size.should eq(0)
     end
+
+    it "un-registers stale consumers, and re-balances group" do
+    end
+  end
+
+  it "supports event metadata" do
   end
 end
 

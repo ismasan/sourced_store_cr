@@ -41,6 +41,9 @@ describe SourcedStore::ConsumerGroups do
 
       groups.minimum_global_seq_for("group-1").should eq(4)
       groups.minimum_global_seq_for("nope").should eq(0)
+
+      groups.last_global_seq_for("group-1").should eq(5)
+      groups.last_global_seq_for("nope").should eq(0)
     end
   end
 end

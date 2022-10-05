@@ -9,6 +9,7 @@ module SourcedClient
       service 'EventStore'
       rpc :ReadStream, ReadStreamRequest, ReadStreamResponse, :ruby_method => :read_stream
       rpc :AppendToStream, AppendToStreamRequest, AppendToStreamResponse, :ruby_method => :append_to_stream
+      rpc :ReadCategory, ReadCategoryRequest, ReadCategoryResponse, :ruby_method => :read_category
     end
 
     class EventStoreClient < Twirp::Client

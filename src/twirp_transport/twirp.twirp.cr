@@ -12,6 +12,7 @@ module SourcedStore
 
       rpc ReadStream, receives: ::SourcedStore::TwirpTransport::ReadStreamRequest, returns: ::SourcedStore::TwirpTransport::ReadStreamResponse
       rpc AppendToStream, receives: ::SourcedStore::TwirpTransport::AppendToStreamRequest, returns: ::SourcedStore::TwirpTransport::AppendToStreamResponse
+      rpc ReadCategory, receives: ::SourcedStore::TwirpTransport::ReadCategoryRequest, returns: ::SourcedStore::TwirpTransport::ReadCategoryResponse
     end
   end
 end

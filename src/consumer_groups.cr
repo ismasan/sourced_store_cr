@@ -28,6 +28,12 @@ module SourcedStore
         @consumers.values.sort_by { |c| c.last_global_seq }.first.last_global_seq
       end
 
+      def last_global_seq : Int64
+        return ZERO64 unless @consumers.any?
+
+        @consumers.values.sort_by { |c| c.last_global_seq }.last.last_global_seq
+      end
+
       def size
         @count
       end
@@ -55,7 +61,7 @@ module SourcedStore
       end
 
       def info : String
-        "consumer #{group_name}/#{id} (#{number}) on #{last_global_seq}"
+        "consumer #{group_name}(#{group_size})/#{id}:#{number} on #{last_global_seq}"
       end
     end
 
@@ -82,7 +88,6 @@ module SourcedStore
     def notify_consumer(consumer : Consumer, last_global_seq : Int64) : Consumer
       register(consumer.group_name, consumer.id) do |cn|
         cn.notify(last_global_seq)
-        @logger.info cn.info
         cn
       end
     end
@@ -91,6 +96,13 @@ module SourcedStore
       @lock.synchronize do
         group = @groups[group_name]?
         group ? group.minimum_global_seq : ZERO64
+      end
+    end
+
+    def last_global_seq_for(group_name : String) : Int64
+      @lock.synchronize do
+        group = @groups[group_name]?
+        group ? group.last_global_seq : ZERO64
       end
     end
   end

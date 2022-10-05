@@ -17,7 +17,7 @@ module SourcedClient
     end
 
     def read_stream(stream_id, upto_seq: nil)
-      resp = client.read_stream(stream_id: stream_id)
+      resp = client.read_stream(stream_id: stream_id, upto_seq: upto_seq)
       # TODO should this client return Result objects
       raise TransportError.new(resp) if resp.error
 
@@ -32,6 +32,17 @@ module SourcedClient
       raise TransportError.new(resp.data) unless resp.data.successful
 
       resp.data.successful
+    end
+
+    def read_category(category, after_global_seq: 0, consumer_group: nil, consumer_id: nil)
+      resp = client.read_category(
+        category: category,
+        after_global_seq: after_global_seq,
+        consumer_group: consumer_group,
+        consumer_id: consumer_id
+      )
+
+      deserialize_events(resp.data.events)
     end
 
     private

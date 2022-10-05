@@ -6,6 +6,7 @@ package sourced_store.twirp_transport;
 service EventStore {
   rpc ReadStream(ReadStreamRequest) returns (ReadStreamResponse) {}
   rpc AppendToStream(AppendToStreamRequest) returns (AppendToStreamResponse) {}
+  rpc ReadCategory(ReadCategoryRequest) returns (ReadCategoryResponse) {}
 }
 
 message Event {

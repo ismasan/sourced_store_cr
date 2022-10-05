@@ -79,7 +79,7 @@ module SourcedStore
         return TwirpTransport::AppendToStreamResponse.new(successful: true)
       end
 
-      @logger.info "Appending #{req.events} events to stream '#{req.stream_id}'"
+      @logger.info "Appending #{events.size} events to stream '#{req.stream_id}'"
       @db.transaction do |tx|
         conn = tx.connection
         events.each do |evt|
@@ -95,6 +95,8 @@ module SourcedStore
           )
         end
 
+        # ToDO: include hash_64(stream_id) in notification payload
+        # so that listening consumers can ignore notifications that don't concern them
         conn.exec("SELECT pg_notify($1, $2)", category_name(events.first.topic.as(String)), events.first.id)
       end
 
@@ -141,24 +143,27 @@ module SourcedStore
       consumer_group : String = req.consumer_group || "global-group"
       consumer_id : String = req.consumer_id || "global-consumer"
       batch_size : Int32 = req.batch_size || 50
-      after_global_seq : Int64 = req.after_global_seq || Int64.new(0)
+      # A client sending req.after_global_seq = nil means
+      # that it wants to pick up work from the wider group last left off.
+      after_global_seq : Int64 = req.after_global_seq || @consumer_groups.last_global_seq_for(consumer_group)
       wait_timeout : Float64 = (req.wait_timeout || 10000.0).to_f / 1000 # milliseconds
 
       sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL] of String
 
       consumer = @consumer_groups.register(consumer_group, consumer_id)
       events = read_category_with_consumer(category, consumer, after_global_seq, batch_size)
-      if events.any?
-        @consumer_groups.notify_consumer(consumer, events.last.global_seq.as(Int64))
-      else # block and poll again
+      if !events.any? # blocking poll
         chan = Channel(Nil).new
         timeout = spawn do
           sleep wait_timeout
           chan.send(nil)
         end
 
+        # ToDO: here the event should include the hash_64(stream_id)
+        # so that this consumer can ignore the trigger and keep waiting for another one
+        # relevant to this consumer
         listen_conn = PG.connect_listen(@db_url, channels: [category], blocking: false) do |n|
-          @logger.info "PONG #{n.inspect}"
+          @logger.info "#{consumer.info}: PONG #{n.inspect}"
           chan.send nil
         end
         chan.receive
@@ -166,6 +171,10 @@ module SourcedStore
         events = read_category_with_consumer(category, consumer, after_global_seq, batch_size)
       end
 
+      if events.any?
+        @consumer_groups.notify_consumer(consumer, events.last.global_seq.as(Int64))
+      end
+      @logger.info "finished #{consumer.info} #{after_global_seq}"
       TwirpTransport::ReadCategoryResponse.new(events: events)
     end
 
@@ -239,6 +248,5 @@ module SourcedStore
       )
       hydrate_events(query)
     end
-
   end
 end
