@@ -7,7 +7,20 @@ describe SourcedStore::ConsumerGroups do
   groups = uninitialized SourcedStore::ConsumerGroups
 
   before_each do
-    groups = SourcedStore::ConsumerGroups.new(logger)
+    groups = SourcedStore::ConsumerGroups.new(logger, liveness_timeout: 5)
+  end
+
+  describe "#checkin and #checkout" do
+    it "stops and restarts liveness timer" do
+      c1 = groups.checkin("group-1", "c1")
+      c2 = groups.checkin("group-1", "c2")
+      c1.checked_in.should eq(true)
+      c2.group_size.should eq(2)
+      groups.checkout(c1)
+      c1.checked_in.should eq(false)
+      sleep 0.008
+      c2.group_size.should eq(1)
+    end
   end
 
   describe "#register" do

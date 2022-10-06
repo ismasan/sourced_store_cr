@@ -19,3 +19,6 @@ shards:
   admiral:
     git: https://github.com/jwaldrip/admiral.cr.git
     version: 1.12.1
+  timer:
+    git: https://github.com/ismasan/timer.cr.git
+    version: 0.1.0+git.commit.aca30a13aaa48020a5ae67f36adf9e2f3f31eb65

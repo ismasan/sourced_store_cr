@@ -16,6 +16,8 @@ dependencies:
     github: crystal-lang/logger.cr
   pg:
     github: will/crystal-pg
+  timer:
+    github: ismasan/timer.cr
 
 crystal: 1.2.2
 

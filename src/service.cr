@@ -7,6 +7,8 @@ require "./twirp_transport/twirp.twirp.cr"
 require "./twirp_transport/twirp.pb.cr"
 
 module SourcedStore
+  alias EventList = Array(TwirpTransport::Event)
+
   struct EventRecord
     include DB::Serializable
     getter id : UUID
@@ -66,15 +68,32 @@ module SourcedStore
     @db : DB::Database
     @consumer_groups : ConsumerGroups
 
-    def initialize(logger : Logger, db_url : String)
+    def initialize(logger : Logger, db_url : String, liveness_timeout : Int32 = ConsumerGroups::DEFAULT_LIVENESS_TIMEOUT)
       @logger = logger
       @db_url = db_url
       @db = DB.open(@db_url)
-      @consumer_groups = ConsumerGroups.new(logger: @logger)
+      @consumer_groups = ConsumerGroups.new(
+        logger: @logger,
+        liveness_timeout: liveness_timeout
+      )
+    end
+
+    def append_to_stream!(stream_id : String, events : EventList) : TwirpTransport::AppendToStreamResponse
+      result = append_to_stream(stream_id, events)
+      raise "Could not append: #{result.error.inspect}" unless result.successful
+
+      result
+    end
+
+    def append_to_stream(stream_id : String, events : EventList) : TwirpTransport::AppendToStreamResponse
+      append_to_stream(TwirpTransport::AppendToStreamRequest.new(
+        stream_id: stream_id,
+        events: events
+      ))
     end
 
     def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse
-      events = req.events.as(Array(SourcedStore::TwirpTransport::Event))
+      events = req.events.as(EventList)
       if !events.any?
         return TwirpTransport::AppendToStreamResponse.new(successful: true)
       end
@@ -138,21 +157,29 @@ module SourcedStore
     # $3 consumer number
     # $4 after_global_seq
     # $5 batch_size
+    def read_category(category : String, consumer_group : String, consumer_id : String) : EventList
+      resp = read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+        category: category,
+        consumer_group: consumer_group,
+        consumer_id: consumer_id,
+        wait_timeout: 0
+      ))
+
+      resp.events.as(EventList)
+    end
+
     def read_category(req : SourcedStore::TwirpTransport::ReadCategoryRequest) : SourcedStore::TwirpTransport::ReadCategoryResponse
       category = req.category.as(String)
       consumer_group : String = req.consumer_group || "global-group"
       consumer_id : String = req.consumer_id || "global-consumer"
       batch_size : Int32 = req.batch_size || 50
-      # A client sending req.after_global_seq = nil means
-      # that it wants to pick up work from the wider group last left off.
-      after_global_seq : Int64 = req.after_global_seq || @consumer_groups.last_global_seq_for(consumer_group)
-      wait_timeout : Float64 = (req.wait_timeout || 10000.0).to_f / 1000 # milliseconds
+      wait_timeout : Time::Span = (req.wait_timeout || 10000).milliseconds
 
       sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL] of String
 
-      consumer = @consumer_groups.register(consumer_group, consumer_id)
-      events = read_category_with_consumer(category, consumer, after_global_seq, batch_size)
-      if !events.any? # blocking poll
+      consumer = @consumer_groups.checkin(consumer_group, consumer_id)
+      events = read_category_with_consumer(category, consumer, batch_size)
+      if !events.any? && !wait_timeout.zero? # blocking poll
         chan = Channel(Nil).new
         timeout = spawn do
           sleep wait_timeout
@@ -168,14 +195,16 @@ module SourcedStore
         end
         chan.receive
         listen_conn.close
-        events = read_category_with_consumer(category, consumer, after_global_seq, batch_size)
+        events = read_category_with_consumer(category, consumer, batch_size)
       end
 
       if events.any?
         @consumer_groups.notify_consumer(consumer, events.last.global_seq.as(Int64))
       end
-      @logger.info "finished #{consumer.info} #{after_global_seq}"
+      @logger.info "finished #{category} #{consumer.info} got #{events.size} events"
       TwirpTransport::ReadCategoryResponse.new(events: events)
+    ensure
+      @consumer_groups.checkout(consumer)
     end
 
     def stop
@@ -209,7 +238,7 @@ module SourcedStore
       Time::UNIX_EPOCH + span
     end
 
-    private def hydrate_events(rs : ::DB::ResultSet) : Array(TwirpTransport::Event)
+    private def hydrate_events(rs : ::DB::ResultSet) : EventList
       EventRecord.from_rs(rs).map do |rec|
         originator_id : String | Nil = rec.originator_id.to_s
         originator_id = nil if originator_id == ""
@@ -234,16 +263,15 @@ module SourcedStore
     private def read_category_with_consumer(
       category : String,
       consumer : SourcedStore::ConsumerGroups::Consumer,
-      after_global_seq : Int64,
       batch_size : Int32
-    ) : Array(TwirpTransport::Event)
+    ) : EventList
       sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL] of String
       query = @db.query(
         sql.join(" "),
         category,
         consumer.group_size,
         consumer.number,
-        after_global_seq,
+        consumer.last_global_seq,
         batch_size
       )
       hydrate_events(query)

@@ -20,6 +20,10 @@ shards:
     git: https://github.com/jeromegn/protobuf.cr.git
     version: 2.2.3
 
+  timer:
+    git: https://github.com/ismasan/timer.cr.git
+    version: 0.1.0+git.commit.aca30a13aaa48020a5ae67f36adf9e2f3f31eb65
+
   twirp:
     git: https://github.com/mloughran/twirp.cr.git
     version: 0.2.0

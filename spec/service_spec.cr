@@ -8,55 +8,39 @@ describe SourcedStore::Service do
   test_db_url = "postgres://localhost/sourced_store_test"
   service = uninitialized SourcedStore::Service
   logger = Logger.new(STDOUT, level: Logger::INFO)
-  stream_id = "order-stream-1"
+  stream_id1 = "stream10" # partitions to consumer 0 of 2
+  stream_id2 = "stream20" # partitions to consumer 1 of 2
   request_events = [
     build_event(
-      id: UUID.random.to_s,
       topic: "orders.start",
-      stream_id: stream_id,
+      stream_id: stream_id1,
       originator_id: nil,
       seq: 1,
-      created_at: Google::Protobuf::Timestamp.new(seconds: 1664718079, nanos: 0),
+      created_at: 1664718079,
       payload: nil
     ),
     build_event(
-      id: UUID.random.to_s,
       topic: "orders.place",
-      stream_id: stream_id,
+      stream_id: stream_id1,
       originator_id: nil,
       seq: 2,
-      created_at: Google::Protobuf::Timestamp.new(seconds: 1664718080, nanos: 0),
+      created_at: 1664718080,
       payload: nil
-    ),
-    build_event(
-      id: UUID.random.to_s,
-      topic: "account.open",
-      stream_id: "account-stream-1",
-      originator_id: nil,
-      seq: 1,
-      created_at: Google::Protobuf::Timestamp.new(seconds: 1664718086, nanos: 0),
-      payload: nil
-    ),
-    build_event(
-      id: UUID.random.to_s,
-      topic: "orders.start",
-      stream_id: "order-stream-2",
-      originator_id: nil,
-      seq: 1,
-      created_at: Google::Protobuf::Timestamp.new(seconds: 1664718081, nanos: 0),
-      payload: nil
-    ),
+    )
   ] of SourcedStore::TwirpTransport::Event
 
   append_req = SourcedStore::TwirpTransport::AppendToStreamRequest.new(
-    stream_id: stream_id,
-    expected_seq: 2,
+    stream_id: stream_id1,
     events: request_events
   )
 
   before_all do
     CLI::Setup.run(["--database=#{test_db_url}"])
-    service = SourcedStore::Service.new(logger: logger, db_url: test_db_url)
+    service = SourcedStore::Service.new(
+      logger: logger,
+      db_url: test_db_url,
+      liveness_timeout: 10
+    )
     service.reset!
   end
 
@@ -73,12 +57,12 @@ describe SourcedStore::Service do
 
       read_resp = service.read_stream(
         SourcedStore::TwirpTransport::ReadStreamRequest.new(
-          stream_id: stream_id
+          stream_id: stream_id1
         )
       )
       read_resp.should be_a(SourcedStore::TwirpTransport::ReadStreamResponse)
-      events = read_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
-      sent_events = append_req.events.as(Array(SourcedStore::TwirpTransport::Event))
+      events = read_resp.events.as(SourcedStore::EventList)
+      sent_events = append_req.events.as(SourcedStore::EventList)
       events.size.should eq(2)
       assert_same_event(events.first, sent_events.first)
       (events[0].global_seq.as(Int64) < events[1].global_seq.as(Int64)).should eq(true)
@@ -87,16 +71,15 @@ describe SourcedStore::Service do
     it "fails if expected_seq doesn't match" do
       service.append_to_stream(req: append_req)
       new_req = SourcedStore::TwirpTransport::AppendToStreamRequest.new(
-        stream_id: stream_id,
+        stream_id: stream_id1,
         expected_seq: 2,
         events: [
           build_event(
-            id: UUID.random.to_s,
             topic: "orders.close",
-            stream_id: stream_id,
+            stream_id: stream_id1,
             originator_id: nil,
             seq: 2,
-            created_at: Google::Protobuf::Timestamp.new(seconds: 1664718080, nanos: 0),
+            created_at: 1664718080,
             payload: nil
           ),
         ] of SourcedStore::TwirpTransport::Event
@@ -112,13 +95,13 @@ describe SourcedStore::Service do
       service.append_to_stream(req: append_req)
       read_resp = service.read_stream(
         SourcedStore::TwirpTransport::ReadStreamRequest.new(
-          stream_id: stream_id,
+          stream_id: stream_id1,
           upto_seq: 1
         )
       )
       read_resp.should be_a(SourcedStore::TwirpTransport::ReadStreamResponse)
-      events = read_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
-      sent_events = append_req.events.as(Array(SourcedStore::TwirpTransport::Event))
+      events = read_resp.events.as(SourcedStore::EventList)
+      sent_events = append_req.events.as(SourcedStore::EventList)
       events.size.should eq(1)
       assert_same_event(events.first, sent_events.first)
     end
@@ -128,70 +111,98 @@ describe SourcedStore::Service do
     it "reads category stream" do
       service.append_to_stream(req: append_req)
 
+      order_event3 = build_event(
+        topic: "orders.start",
+        stream_id: stream_id2,
+        originator_id: nil,
+        seq: 1,
+        created_at: 1664718011,
+        payload: nil
+      )
+
+      service.append_to_stream!(stream_id2, [order_event3])
+
+      service.append_to_stream!(stream_id2, [
+        build_event(
+          topic: "accounts.open",
+          stream_id: "account1",
+          originator_id: nil,
+          seq: 1,
+          created_at: 1664718011,
+          payload: nil
+        )
+      ])
+
       resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders"
       ))
-      events = resp.events.as(Array(SourcedStore::TwirpTransport::Event))
-      sent_events = append_req.events.as(Array(SourcedStore::TwirpTransport::Event))
+      events = resp.events.as(SourcedStore::EventList)
+      sent_events = append_req.events.as(SourcedStore::EventList)
       events.size.should eq(3)
       assert_same_event(events[0], sent_events[0])
       assert_same_event(events[1], sent_events[1])
-      assert_same_event(events[2], sent_events[3])
-    end
-
-    it "queries after a given event global seq" do
-      service.append_to_stream(req: append_req)
-
-      resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
-        category: "orders",
-        after_global_seq: Int64.new(0)
-      ))
-      all_events = resp.events.as(Array(SourcedStore::TwirpTransport::Event))
-      all_events.size.should eq(3)
-
-      resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
-        category: "orders",
-        after_global_seq: all_events[0].global_seq
-      ))
-      events = resp.events.as(Array(SourcedStore::TwirpTransport::Event))
-      assert_same_event(events[0], all_events[1])
-      assert_same_event(events[1], all_events[2])
+      assert_same_event(events[2], order_event3)
     end
 
     it "partitions stream by consumers" do
-      service.append_to_stream(req: append_req)
-
-      consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
-        category: "orders",
-        consumer_group: "sale-report",
-        consumer_id: "sale-report-1",
-        after_global_seq: Int64.new(0)
-      ))
+      service.reset!
+      service.append_to_stream!(stream_id1, append_req.events.as(SourcedStore::EventList))
 
       # Group starts with 1 consumer/partition
-      consumer_1_events = consumer_1_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
-      consumer_1_events.size.should eq(3)
-
-      consumer_2_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+      # that returns all events so far
+      c1_events = service.read_category(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "sale-report-2",
-        after_global_seq: Int64.new(0)
-      ))
+        consumer_id: "c1"
+      )
+      c1_events.size.should eq(2)
 
-      consumer_2_events = consumer_2_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
-      consumer_2_events.size.should eq(1)
-
-      # Group now has 2 partitions, so consumer 1 gets a subset of events
-      consumer_1b_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+      # Group is now up to date, so a new consumer has no new events to fetch
+      c2_events = service.read_category(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "sale-report-1",
-        after_global_seq: Int64.new(0)
-      ))
+        consumer_id: "c2"
+      )
 
-      consumer_1b_events = consumer_1b_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
-      consumer_1b_events.size.should eq(2)
+      c2_events.size.should eq(0)
+
+      # Group now has 2 partitions so, after adding new events, c1 and c2 get a subset of events
+      service.append_to_stream!(stream_id1, [
+        build_event(
+          topic: "orders.start",
+          stream_id: stream_id1,
+          originator_id: nil,
+          seq: 3,
+          created_at: 1664718011,
+          payload: nil
+        )
+      ])
+      service.append_to_stream!(stream_id2, [
+        build_event(
+          topic: "orders.start",
+          stream_id: stream_id2,
+          originator_id: nil,
+          seq: 1,
+          created_at: 1664718011,
+          payload: nil
+        )
+      ])
+
+      c1_events = service.read_category(
+        category: "orders",
+        consumer_group: "sale-report",
+        consumer_id: "c1"
+      )
+      c1_events.size.should eq(1)
+      c1_events.map(&.stream_id).should eq([stream_id1])
+
+      c2_events = service.read_category(
+        category: "orders",
+        consumer_group: "sale-report",
+        consumer_id: "c2"
+      )
+      c2_events.size.should eq(1)
+      c2_events.map(&.stream_id).should eq([stream_id2])
     end
 
     it "blocks and waits for new events if none found yet" do
@@ -205,25 +216,23 @@ describe SourcedStore::Service do
       consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "sale-report-1",
-        after_global_seq: Int64.new(0)
+        consumer_id: "timeout-exceeded",
+        wait_timeout: 200, # milliseconds
       ))
-
-      events = consumer_1_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
-      events.size.should eq(3)
+      events = consumer_1_resp.events.as(SourcedStore::EventList)
+      events.size.should eq(2)
     end
 
     it "returns if timeout exceeded after polling" do
-      service.reset!
+      # service.reset!
       consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "sale-report-1",
+        consumer_id: "timeout-exceeded",
         wait_timeout: 5, # milliseconds
-        after_global_seq: Int64.new(0)
       ))
 
-      events = consumer_1_resp.events.as(Array(SourcedStore::TwirpTransport::Event))
+      events = consumer_1_resp.events.as(SourcedStore::EventList)
       events.size.should eq(0)
     end
 
@@ -236,21 +245,23 @@ describe SourcedStore::Service do
 end
 
 private def build_event(
-  id : String | Nil,
   topic : String | Nil,
   stream_id : String | Nil,
   originator_id : String | Nil,
   seq : Int32 | Nil,
-  created_at : Google::Protobuf::Timestamp | Nil,
+  created_at : Int32 | Nil,
   payload : Slice(UInt8) | Nil
 )
+  cat : Google::Protobuf::Timestamp | Nil = nil
+  cat = Google::Protobuf::Timestamp.new(seconds: created_at, nanos: 0) if created_at
+
   SourcedStore::TwirpTransport::Event.new(
-    id: id,
+    id: UUID.random.to_s,
     topic: topic,
     stream_id: stream_id,
     originator_id: originator_id,
     seq: seq,
-    created_at: created_at,
+    created_at: cat,
     payload: payload
   )
 end

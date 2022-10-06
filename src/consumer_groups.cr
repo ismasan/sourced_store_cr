@@ -1,88 +1,64 @@
 require "logger"
+require "timer"
 
 module SourcedStore
   class ConsumerGroups
     ZERO64 = Int64.new(0)
+    DEFAULT_LIVENESS_TIMEOUT = 30000 # 30 seconds
 
-    class Group
-      getter name : String
+    @liveness_timeout : Time::Span
 
-      def initialize(@name)
-        @consumers = Hash(String, Consumer).new
-        @count = 0
-      end
-
-      def register(consumer_id : String)
-        consumer = @consumers[consumer_id]?
-        return consumer if consumer
-
-        consumer = Consumer.new(group: self, id: consumer_id, number: @count)
-        @consumers[consumer_id] = consumer
-        @count += 1
-        consumer
-      end
-
-      def minimum_global_seq : Int64
-        return ZERO64 unless @consumers.any?
-
-        @consumers.values.sort_by { |c| c.last_global_seq }.first.last_global_seq
-      end
-
-      def last_global_seq : Int64
-        return ZERO64 unless @consumers.any?
-
-        @consumers.values.sort_by { |c| c.last_global_seq }.last.last_global_seq
-      end
-
-      def size
-        @count
-      end
-    end
-
-    class Consumer
-      getter group_name : String
-      getter id : String
-      getter number : Int32
-      getter last_global_seq : Int64
-
-      def initialize(group : Group, @id, @number)
-        @group = group
-        @group_name = group.name
-        @last_global_seq = ZERO64
-      end
-
-      def group_size : Int32
-        @group.size
-      end
-
-      def notify(seq : Int64) : Consumer
-        @last_global_seq = seq
-        self
-      end
-
-      def info : String
-        "consumer #{group_name}(#{group_size})/#{id}:#{number} on #{last_global_seq}"
-      end
-    end
-
-    def initialize(logger : Logger)
+    def initialize(logger : Logger, liveness_timeout : Int32 = DEFAULT_LIVENESS_TIMEOUT)
       @groups = Hash(String, Group).new
       @lock = Mutex.new
       @logger = logger
+      @liveness_timeout = liveness_timeout.milliseconds
+      @timers = Hash(String, Timer).new
+    end
+
+    def checkin(group_name : String, consumer_id : String)
+      register(group_name, consumer_id) do |cn|
+        @timers[cn.key].cancel && @timers.delete(cn.key) if @timers.has_key?(cn.key)
+        cn.checkin!
+      end
+    end
+
+    def checkout(consumer : Consumer | Nil) : Consumer | Nil
+      return unless consumer
+
+      register(consumer.group_name, consumer.id) do |cn|
+        @timers[cn.key] ||= Timer.new(@liveness_timeout) do
+          remove_consumer(cn)
+        end
+        cn.checkout!
+      end
+    end
+
+    private def remove_consumer(consumer : Consumer)
+      @lock.synchronize do
+        group = @groups[consumer.group_name]?
+        return unless group
+        group.remove(consumer.id)
+        @groups.delete(consumer.group_name) if group.size == 0
+        @logger.info info
+      end
+    end
+
+    def info
+      %(#{@groups.values.size} consumer groups: #{@groups.values.map { |g| g.info }.join(", ")})
     end
 
     def register(group_name : String, consumer_id : String, &block)
-      group = register(group_name, consumer_id)
-      yield group
-    end
-
-    def register(group_name : String, consumer_id : String) : Consumer
       @lock.synchronize do
         group = @groups[group_name]? || Group.new(name: group_name)
         consumer = group.register(consumer_id)
         @groups[group_name] = group
-        consumer
+        yield consumer
       end
+    end
+
+    def register(group_name : String, consumer_id : String) : Consumer
+      register(group_name, consumer_id) { |cn| cn }
     end
 
     def notify_consumer(consumer : Consumer, last_global_seq : Int64) : Consumer
@@ -107,3 +83,6 @@ module SourcedStore
     end
   end
 end
+
+require "./consumer_groups/group"
+require "./consumer_groups/consumer"
