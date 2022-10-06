@@ -4,9 +4,9 @@ require "timer"
 module SourcedStore
   class ConsumerGroups
     ZERO64 = Int64.new(0)
-    DEFAULT_LIVENESS_TIMEOUT = 30000 # 30 seconds
+    DEFAULT_LIVENESS_TIMEOUT = 15000 # 15 seconds
 
-    @liveness_timeout : Time::Span
+    getter liveness_timeout : Time::Span
 
     def initialize(logger : Logger, liveness_timeout : Int32 = DEFAULT_LIVENESS_TIMEOUT)
       @groups = Hash(String, Group).new

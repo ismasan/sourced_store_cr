@@ -30,6 +30,7 @@ module SourcedStore
       CONCURRENT_WRITE_LOCK_ERROR = "concurrent_write_lock_error"
     end
 
+    DEFAULT_WAIT_TIMEOUT = 10000 # 10 seconds
     PG_EVENT_SEQ_INDEX_EXP = /unique_index_on_event_seqs/
 
     SELECT_EVENTS_SQL = %(select
@@ -76,6 +77,10 @@ module SourcedStore
         logger: @logger,
         liveness_timeout: liveness_timeout
       )
+    end
+
+    def info
+      %(db: #{@db_url} liveness timeout: #{@consumer_groups.liveness_timeout})
     end
 
     def append_to_stream!(stream_id : String, events : EventList) : TwirpTransport::AppendToStreamResponse
@@ -173,7 +178,7 @@ module SourcedStore
       consumer_group : String = req.consumer_group || "global-group"
       consumer_id : String = req.consumer_id || "global-consumer"
       batch_size : Int32 = req.batch_size || 50
-      wait_timeout : Time::Span = (req.wait_timeout || 10000).milliseconds
+      wait_timeout : Time::Span = (req.wait_timeout || DEFAULT_WAIT_TIMEOUT).milliseconds
 
       sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL] of String
 
