@@ -54,33 +54,28 @@ module SourcedStore
     )
 
     # $1 category
-    # $2 group size
-    # $3 consumer number
-    # $4 after_global_seq
-    # $5 batch_size
-    READ_CATEGORY_WHERE_SQL = %(
-      WHERE event_store.event_category(topic) = $1
-      AND MOD(event_store.hash_64(stream_id::varchar), $2) = $3
-      AND global_seq > $4
-      ORDER BY global_seq ASC
-      LIMIT $5
+    # $2 consumer_group
+    # $3 consumer_id
+    # $4 batch_size
+    READ_CATEGORY_SQL = %(
+      SELECT * FROM event_store.read_category($1::varchar, $2::varchar, $3::varchar, $4::integer)
+    )
+
+    ACK_CONSUMER_SQL = %(
+      SELECT * FROM event_store.checkout_consumer($1::varchar, $2::varchar, $3::bigint)
     )
 
     @db : DB::Database
-    @consumer_groups : ConsumerGroups
 
     def initialize(logger : Logger, db_url : String, liveness_timeout : Int32 = ConsumerGroups::DEFAULT_LIVENESS_TIMEOUT)
       @logger = logger
       @db_url = db_url
       @db = DB.open(@db_url)
-      @consumer_groups = ConsumerGroups.new(
-        logger: @logger,
-        liveness_timeout: liveness_timeout
-      )
+      @liveness_timeout = liveness_timeout
     end
 
     def info
-      %(db: #{@db_url} liveness timeout: #{@consumer_groups.liveness_timeout})
+      %(db: #{@db_url} liveness timeout: #{@liveness_timeout})
     end
 
     def append_to_stream!(stream_id : String, events : EventList) : TwirpTransport::AppendToStreamResponse
@@ -180,11 +175,9 @@ module SourcedStore
       batch_size : Int32 = req.batch_size || 50
       wait_timeout : Time::Span = (req.wait_timeout || DEFAULT_WAIT_TIMEOUT).milliseconds
 
-      sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL] of String
-
-      consumer = @consumer_groups.checkin(consumer_group, consumer_id)
-      events = read_category_with_consumer(category, consumer, batch_size)
+      events = read_category_with_consumer(category, consumer_group, consumer_id, batch_size)
       if !events.any? && !wait_timeout.zero? # blocking poll
+        @logger.info "no events. Blocking."
         chan = Channel(Nil).new
         timeout = spawn do
           sleep wait_timeout
@@ -195,21 +188,29 @@ module SourcedStore
         # so that this consumer can ignore the trigger and keep waiting for another one
         # relevant to this consumer
         listen_conn = PG.connect_listen(@db_url, channels: [category], blocking: false) do |n|
-          @logger.info "#{consumer.info}: PONG #{n.inspect}"
+          @logger.info "#{consumer_group} #{consumer_id}: PONG #{n.inspect}"
           chan.send nil
         end
         chan.receive
         listen_conn.close
-        events = read_category_with_consumer(category, consumer, batch_size)
+        events = read_category_with_consumer(category, consumer_group, consumer_id, batch_size)
       end
 
       if events.any?
-        @consumer_groups.notify_consumer(consumer, events.last.global_seq.as(Int64))
+        ack_consumer(consumer_group, consumer_id, events.last.global_seq.as(Int64))
       end
-      @logger.info "finished #{category} #{consumer.info} got #{events.size} events"
+      @logger.info "finished #{category} #{consumer_group} #{consumer_id} got #{events.size} events"
       TwirpTransport::ReadCategoryResponse.new(events: events)
-    ensure
-      @consumer_groups.checkout(consumer)
+    end
+
+    def ack_consumer(consumer_group : String, consumer_id : String, last_seq : Int64)
+      @logger.info "ACK #{consumer_group} #{consumer_id} at #{last_seq}"
+      @db.exec(
+        ACK_CONSUMER_SQL,
+        consumer_group,
+        consumer_id,
+        last_seq
+      )
     end
 
     def stop
@@ -221,8 +222,8 @@ module SourcedStore
       return unless ENV["ENV"] == "test"
 
       @logger.info "Resetting DB. Careful!"
-      @consumer_groups = ConsumerGroups.new(logger: @logger)
       @db.exec("TRUNCATE event_store.events RESTART IDENTITY")
+      @db.exec("DELETE FROM event_store.consumers")
     end
 
     private def time_to_protobuf_timestamp(time : Time)
@@ -267,16 +268,15 @@ module SourcedStore
 
     private def read_category_with_consumer(
       category : String,
-      consumer : SourcedStore::ConsumerGroups::Consumer,
+      consumer_group : String,
+      consumer_id : String,
       batch_size : Int32
     ) : EventList
-      sql = [SELECT_EVENTS_SQL, READ_CATEGORY_WHERE_SQL] of String
       query = @db.query(
-        sql.join(" "),
+        READ_CATEGORY_SQL,
         category,
-        consumer.group_size,
-        consumer.number,
-        consumer.last_global_seq,
+        consumer_group,
+        consumer_id,
         batch_size
       )
       hydrate_events(query)

@@ -215,7 +215,7 @@ describe SourcedStore::Service do
 
       consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
-        consumer_group: "sale-report",
+        consumer_group: "another-group",
         consumer_id: "timeout-exceeded",
         wait_timeout: 200, # milliseconds
       ))
@@ -224,7 +224,7 @@ describe SourcedStore::Service do
     end
 
     it "returns if timeout exceeded after polling" do
-      # service.reset!
+      service.reset!
       consumer_1_resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
