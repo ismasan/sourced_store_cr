@@ -10,6 +10,7 @@ module SourcedClient
       rpc :ReadStream, ReadStreamRequest, ReadStreamResponse, :ruby_method => :read_stream
       rpc :AppendToStream, AppendToStreamRequest, AppendToStreamResponse, :ruby_method => :append_to_stream
       rpc :ReadCategory, ReadCategoryRequest, ReadCategoryResponse, :ruby_method => :read_category
+      rpc :AckConsumer, AckConsumerRequest, AckConsumerResponse, :ruby_method => :ack_consumer
     end
 
     class EventStoreClient < Twirp::Client

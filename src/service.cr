@@ -30,7 +30,7 @@ module SourcedStore
       CONCURRENT_WRITE_LOCK_ERROR = "concurrent_write_lock_error"
     end
 
-    DEFAULT_WAIT_TIMEOUT = 10000 # 10 seconds
+    DEFAULT_WAIT_TIMEOUT   = 10000 # 10 seconds
     PG_EVENT_SEQ_INDEX_EXP = /unique_index_on_event_seqs/
 
     SELECT_EVENTS_SQL = %(select
@@ -203,7 +203,25 @@ module SourcedStore
       TwirpTransport::ReadCategoryResponse.new(events: events)
     end
 
-    def ack_consumer(consumer_group : String, consumer_id : String, last_seq : Int64)
+    def ack_consumer(req : TwirpTransport::AckConsumerRequest) : TwirpTransport::AckConsumerResponse
+      if !req.last_seq.is_a?(Int64)
+        @logger.info "ACK last_seq is #{req.last_seq}. Noop"
+        return TwirpTransport::AckConsumerResponse.new(
+          successful: false
+        )
+      end
+
+      success = ack_consumer(
+        consumer_group: req.consumer_group.as(String),
+        consumer_id: req.consumer_id.as(String),
+        last_seq: req.last_seq.as(Int64)
+      )
+      TwirpTransport::AckConsumerResponse.new(
+        successful: success
+      )
+    end
+
+    def ack_consumer(consumer_group : String, consumer_id : String, last_seq : Int64) : Bool
       @logger.info "ACK #{consumer_group} #{consumer_id} at #{last_seq}"
       @db.exec(
         ACK_CONSUMER_SQL,
@@ -211,6 +229,8 @@ module SourcedStore
         consumer_id,
         last_seq
       )
+
+      true
     end
 
     def stop

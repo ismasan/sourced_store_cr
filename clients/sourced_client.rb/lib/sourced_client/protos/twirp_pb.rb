@@ -48,6 +48,15 @@ Google::Protobuf::DescriptorPool.generated_pool.build do
     add_message "sourced_store.twirp_transport.ReadCategoryResponse" do
       repeated :events, :message, 1, "sourced_store.twirp_transport.Event"
     end
+    add_message "sourced_store.twirp_transport.AckConsumerRequest" do
+      optional :consumer_group, :string, 1
+      optional :consumer_id, :string, 2
+      optional :last_seq, :int64, 3
+    end
+    add_message "sourced_store.twirp_transport.AckConsumerResponse" do
+      optional :successful, :bool, 1
+      optional :error, :message, 2, "sourced_store.twirp_transport.Error"
+    end
   end
 end
 
@@ -61,5 +70,7 @@ module SourcedClient
     AppendToStreamResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.AppendToStreamResponse").msgclass
     ReadCategoryRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.ReadCategoryRequest").msgclass
     ReadCategoryResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.ReadCategoryResponse").msgclass
+    AckConsumerRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.AckConsumerRequest").msgclass
+    AckConsumerResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("sourced_store.twirp_transport.AckConsumerResponse").msgclass
   end
 end

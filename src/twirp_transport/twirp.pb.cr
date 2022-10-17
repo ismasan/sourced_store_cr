@@ -85,5 +85,24 @@ module SourcedStore
         repeated :events, Event, 1
       end
     end
+
+    struct AckConsumerRequest
+      include ::Protobuf::Message
+
+      contract_of "proto3" do
+        optional :consumer_group, :string, 1
+        optional :consumer_id, :string, 2
+        optional :last_seq, :int64, 3
+      end
+    end
+
+    struct AckConsumerResponse
+      include ::Protobuf::Message
+
+      contract_of "proto3" do
+        optional :successful, :bool, 1
+        optional :error, Error, 2
+      end
+    end
   end
 end

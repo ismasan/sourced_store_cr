@@ -3,7 +3,7 @@ require "timer"
 
 module SourcedStore
   class ConsumerGroups
-    ZERO64 = Int64.new(0)
+    ZERO64                   = Int64.new(0)
     DEFAULT_LIVENESS_TIMEOUT = 15000 # 15 seconds
 
     getter liveness_timeout : Time::Span

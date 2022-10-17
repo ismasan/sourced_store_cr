@@ -26,7 +26,7 @@ describe SourcedStore::Service do
       seq: 2,
       created_at: 1664718080,
       payload: nil
-    )
+    ),
   ] of SourcedStore::TwirpTransport::Event
 
   append_req = SourcedStore::TwirpTransport::AppendToStreamRequest.new(
@@ -130,7 +130,7 @@ describe SourcedStore::Service do
           seq: 1,
           created_at: 1664718011,
           payload: nil
-        )
+        ),
       ])
 
       resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
@@ -175,7 +175,7 @@ describe SourcedStore::Service do
           seq: 3,
           created_at: 1664718011,
           payload: nil
-        )
+        ),
       ])
       service.append_to_stream!(stream_id2, [
         build_event(
@@ -185,7 +185,7 @@ describe SourcedStore::Service do
           seq: 1,
           created_at: 1664718011,
           payload: nil
-        )
+        ),
       ])
 
       c1_events = service.read_category(
