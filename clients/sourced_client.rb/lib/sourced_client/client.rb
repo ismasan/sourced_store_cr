@@ -55,34 +55,41 @@ module SourcedClient
 
       Enumerator.new do |yielder|
         while !@shutting_down do
-          events = read_category(
-            category,
-            after_global_seq: after_global_seq,
-            consumer_group: consumer_group,
-            consumer_id: consumer_id
-          )
+          begin
+            events = read_category(
+              category,
+              after_global_seq: after_global_seq,
+              consumer_group: consumer_group,
+              consumer_id: consumer_id
+            )
 
-          events.each do |e|
-            yielder << e
-            last_read_seq = e[:global_seq]
-          end
+            events.each do |e|
+              yielder << e
+              last_read_seq = e[:global_seq]
+            end
 
-          if events.any?
+            if events.any?
+              client.ack_consumer(
+                consumer_group: consumer_group,
+                consumer_id: consumer_id,
+                last_seq: last_read_seq
+              )
+            end
+          rescue Faraday::ConnectionFailed
+            puts 'Disconnected. Retrying in 5...'
+            sleep 5
+          rescue StandardError => ex
+            puts "Error #{ex}. ACKing and bailing."
             client.ack_consumer(
               consumer_group: consumer_group,
               consumer_id: consumer_id,
               last_seq: last_read_seq
             )
+
+            raise
           end
         end
       end
-
-    rescue StandardError
-      client.ack_consumer(
-        consumer_group: consumer_group,
-        consumer_id: consumer_id,
-        last_seq: last_read_seq
-      )
     end
 
     def ack_consumer(consumer_group:, consumer_id:, last_seq:)
