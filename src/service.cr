@@ -29,6 +29,22 @@ module SourcedStore
     end
   end
 
+  struct Consumer
+    getter group_name : String
+    getter id : String
+
+    def initialize(@group_name : String, @id : String)
+    end
+
+    def info : String
+      key
+    end
+
+    def key : String
+      [group_name, id].join(":")
+    end
+  end
+
   class Service < SourcedStore::TwirpTransport::EventStore
     module ErrorCodes
       CONCURRENT_WRITE_LOCK_ERROR = "concurrent_write_lock_error"
@@ -187,14 +203,15 @@ module SourcedStore
       category = req.category.as(String)
       consumer_group : String = req.consumer_group || "global-group"
       consumer_id : String = req.consumer_id || "global-consumer"
+      consumer = Consumer.new(group_name: consumer_group, id: consumer_id)
       batch_size : Int32 = req.batch_size || 50
       wait_timeout : Time::Span = (req.wait_timeout || DEFAULT_WAIT_TIMEOUT).milliseconds
 
-      events = read_category_with_consumer(category, consumer_group, consumer_id, batch_size)
+      events = read_category_with_consumer(category, consumer, batch_size)
       if !events.any? && !wait_timeout.zero? # blocking poll
-        @logger.info "no events. Blocking."
+        @logger.info "no events for consumer #{consumer.info}. Blocking."
         chan = Channel(Bool).new
-        poller_key = [category, consumer_group, consumer_id].join(":")
+        poller_key = [category, consumer.key].join(":")
         @pollers[poller_key] = chan
         timeout = spawn do
           sleep wait_timeout
@@ -202,15 +219,15 @@ module SourcedStore
         end
 
         if chan.receive
-          events = read_category_with_consumer(category, consumer_group, consumer_id, batch_size)
+          events = read_category_with_consumer(category, consumer, batch_size)
         end
         @pollers.delete poller_key
       end
 
       if events.any?
-        ack_consumer(consumer_group, consumer_id, events.last.global_seq.as(Int64))
+        ack_consumer(consumer, events.last.global_seq.as(Int64))
       end
-      @logger.info "finished #{category} #{consumer_group} #{consumer_id} got #{events.size} events"
+      @logger.info "finished #{category} #{consumer.info} got #{events.size} events"
       TwirpTransport::ReadCategoryResponse.new(events: events)
     end
 
@@ -242,6 +259,10 @@ module SourcedStore
       )
 
       true
+    end
+
+    def ack_consumer(consumer : Consumer, last_seq : Int64) : Bool
+      ack_consumer(consumer_group: consumer.group_name, consumer_id: consumer.id, last_seq: last_seq)
     end
 
     def stop
@@ -300,15 +321,14 @@ module SourcedStore
 
     private def read_category_with_consumer(
       category : String,
-      consumer_group : String,
-      consumer_id : String,
+      consumer : Consumer,
       batch_size : Int32
     ) : EventList
       query = @db.query(
         READ_CATEGORY_SQL,
         category,
-        consumer_group,
-        consumer_id,
+        consumer.group_name,
+        consumer.id,
         batch_size
       )
       hydrate_events(query)
