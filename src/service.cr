@@ -6,6 +6,10 @@ require "./consumer_groups"
 require "./twirp_transport/twirp.twirp.cr"
 require "./twirp_transport/twirp.pb.cr"
 
+# TODO:
+# global fiber listening to PG Notify events
+# auto-rebalance consumers after liveness interval
+# Advisory lock around consumer, so no duped consumers can consume or ACK at the same time
 module SourcedStore
   alias EventList = Array(TwirpTransport::Event)
 
@@ -65,13 +69,24 @@ module SourcedStore
       SELECT * FROM event_store.checkout_consumer($1::varchar, $2::varchar, $3::bigint)
     )
 
+    NOTIFY_CHANNEL = "new-events"
+
     @db : DB::Database
+    @listen_conn : PG::ListenConnection
 
     def initialize(logger : Logger, db_url : String, liveness_timeout : Int32 = ConsumerGroups::DEFAULT_LIVENESS_TIMEOUT)
       @logger = logger
       @db_url = db_url
       @db = DB.open(@db_url)
       @liveness_timeout = liveness_timeout
+      # ToDO: here the event should include the hash_64(stream_id)
+      # so that this consumer can ignore the trigger and keep waiting for another one
+      # relevant to this consumer
+      @pollers = Hash(String, Channel(Bool)).new
+      @listen_conn = PG.connect_listen(@db_url, channels: [NOTIFY_CHANNEL], blocking: false) do |n|
+        @logger.info "PONG #{n.inspect}"
+        @pollers.each_value { |ch| ch.send(true) }
+      end
     end
 
     def info
@@ -116,7 +131,7 @@ module SourcedStore
 
         # ToDO: include hash_64(stream_id) in notification payload
         # so that listening consumers can ignore notifications that don't concern them
-        conn.exec("SELECT pg_notify($1, $2)", category_name(events.first.topic.as(String)), events.first.id)
+        conn.exec("SELECT pg_notify($1, $2)", NOTIFY_CHANNEL, events.first.id)
       end
 
       TwirpTransport::AppendToStreamResponse.new(successful: true)
@@ -178,22 +193,18 @@ module SourcedStore
       events = read_category_with_consumer(category, consumer_group, consumer_id, batch_size)
       if !events.any? && !wait_timeout.zero? # blocking poll
         @logger.info "no events. Blocking."
-        chan = Channel(Nil).new
+        chan = Channel(Bool).new
+        poller_key = [category, consumer_group, consumer_id].join(":")
+        @pollers[poller_key] = chan
         timeout = spawn do
           sleep wait_timeout
-          chan.send(nil)
+          chan.send(false)
         end
 
-        # ToDO: here the event should include the hash_64(stream_id)
-        # so that this consumer can ignore the trigger and keep waiting for another one
-        # relevant to this consumer
-        listen_conn = PG.connect_listen(@db_url, channels: [category], blocking: false) do |n|
-          @logger.info "#{consumer_group} #{consumer_id}: PONG #{n.inspect}"
-          chan.send nil
+        if chan.receive
+          events = read_category_with_consumer(category, consumer_group, consumer_id, batch_size)
         end
-        chan.receive
-        listen_conn.close
-        events = read_category_with_consumer(category, consumer_group, consumer_id, batch_size)
+        @pollers.delete poller_key
       end
 
       if events.any?
@@ -235,6 +246,7 @@ module SourcedStore
 
     def stop
       @logger.info "CLOSING DB"
+      @listen_conn.close
       @db.close
     end
 
