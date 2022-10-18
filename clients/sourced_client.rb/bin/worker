@@ -1,0 +1,53 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler/setup"
+require 'yaml/store'
+require "sourced_client"
+require 'securerandom'
+
+cl = SourcedClient::Client.new
+consumer_group = 'test-group'
+consumer_id = ENV['ID'] || SecureRandom.hex
+
+projection = proc do |evt|
+  store = YAML::Store.new("./projections/#{evt[:stream_id]}.yml")
+  store.transaction do
+    last_seq = store['seq'] || 0
+    puts "#{evt[:stream_id]} #{last_seq} #{evt.inspect}"
+    events = store['events'] || []
+    unless last_seq > evt[:global_seq] # Idempotency
+      last_seq = evt[:global_seq]
+      events << evt
+      store['seq'] = last_seq
+      store['counts'] = events.size
+      store['events'] = events
+    end
+  end
+end
+
+Signal.trap 'INT' do
+  puts 'Shutting down!'
+  cl.shutdown
+end
+
+events = cl.stream_category(
+  'tests',
+  consumer_group: consumer_group,
+  consumer_id: consumer_id
+)
+
+events.each do |e|
+  projection.call(e)
+  puts "Got #{e[:id]} #{e[:stream_id]} #{e[:global_seq]}"
+end
+
+puts 'BYEEEEE'
+
+# Ideas:
+# * read_category vs. stream_category?
+# * handle interrupts better (shut down open HTTP conn, ACK last known seq, exit)
+#   * perhaps on INT signal it should gracefully shut down,
+#     ie. wait until current long-poll is done, ACK last seq, exit.
+# * Periodic/deferred ACK? Every X events, or every Z seconds
+# * streams that group events into per-stream_id batches, for more efficient projectors?

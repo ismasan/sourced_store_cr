@@ -14,6 +14,7 @@ module SourcedClient
   class Client
     def initialize(endpoint: 'http://127.0.0.1:8080/twirp')
       @client = SourcedClient::TwirpTransport::EventStoreClient.new(endpoint)
+      @shutting_down = false
     end
 
     def read_stream(stream_id, upto_seq: nil)
@@ -34,29 +35,45 @@ module SourcedClient
       resp.data.successful
     end
 
+    def shutdown
+      @shutting_down = true
+    end
+
     def read_category(category, after_global_seq: 0, consumer_group: nil, consumer_id: nil)
+      resp = client.read_category(
+        category: category,
+        after_global_seq: after_global_seq,
+        consumer_group: consumer_group,
+        consumer_id: consumer_id
+      )
+
+      deserialize_events(resp.data.events)
+    end
+
+    def stream_category(category, after_global_seq: 0, consumer_group: nil, consumer_id: nil)
       last_read_seq = 0
 
       Enumerator.new do |yielder|
-        loop do
-          resp = client.read_category(
-            category: category,
+        while !@shutting_down do
+          events = read_category(
+            category,
             after_global_seq: after_global_seq,
             consumer_group: consumer_group,
             consumer_id: consumer_id
           )
 
-          events = deserialize_events(resp.data.events)
           events.each do |e|
             yielder << e
             last_read_seq = e[:global_seq]
           end
 
-          client.ack_consumer(
-            consumer_group: consumer_group,
-            consumer_id: consumer_id,
-            last_seq: last_read_seq
-          )
+          if events.any?
+            client.ack_consumer(
+              consumer_group: consumer_group,
+              consumer_id: consumer_id,
+              last_seq: last_read_seq
+            )
+          end
         end
       end
 
