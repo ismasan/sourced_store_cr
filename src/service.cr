@@ -183,11 +183,6 @@ module SourcedStore
       TwirpTransport::ReadStreamResponse.new(events: events)
     end
 
-    # $1 category
-    # $2 group size
-    # $3 consumer number
-    # $4 after_global_seq
-    # $5 batch_size
     def read_category(category : String, consumer_group : String, consumer_id : String) : EventList
       resp = read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: category,

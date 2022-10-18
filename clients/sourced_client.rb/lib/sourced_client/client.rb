@@ -39,10 +39,9 @@ module SourcedClient
       @shutting_down = true
     end
 
-    def read_category(category, after_global_seq: 0, consumer_group: nil, consumer_id: nil)
+    def read_category(category, consumer_group: nil, consumer_id: nil)
       resp = client.read_category(
         category: category,
-        after_global_seq: after_global_seq,
         consumer_group: consumer_group,
         consumer_id: consumer_id
       )
@@ -50,7 +49,7 @@ module SourcedClient
       deserialize_events(resp.data.events)
     end
 
-    def stream_category(category, after_global_seq: 0, consumer_group: nil, consumer_id: nil)
+    def stream_category(category, consumer_group: nil, consumer_id: nil)
       last_read_seq = 0
 
       Enumerator.new do |yielder|
@@ -58,7 +57,6 @@ module SourcedClient
           begin
             events = read_category(
               category,
-              after_global_seq: after_global_seq,
               consumer_group: consumer_group,
               consumer_id: consumer_id
             )
