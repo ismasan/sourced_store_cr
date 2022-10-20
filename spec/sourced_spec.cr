@@ -59,6 +59,8 @@ describe Sourced do
     stage.uncommitted_events.size.should eq(2)
     stage.uncommitted_events[0].should be_a(TestApp::NameUpdated)
     stage.uncommitted_events[0].seq.should eq(3)
+    stage.uncommitted_events[0].timestamp.should be_a(Time)
+    stage.uncommitted_events[0].as(TestApp::NameUpdated).payload.new_name.should eq("Ismael")
     stage.uncommitted_events[1].should be_a(TestApp::AgeUpdated)
     stage.uncommitted_events[1].seq.should eq(4)
   end
