@@ -1,88 +1,154 @@
 require "logger"
-require "timer"
+require "./sourced"
+# require "./consumer_groups/events"
+# require "./consumer_groups/group"
+# require "./consumer_groups/store"
+# require "./consumer_groups/mem_store"
 
 module SourcedStore
   class ConsumerGroups
-    ZERO64                   = Int64.new(0)
-    DEFAULT_LIVENESS_TIMEOUT = 15000 # 15 seconds
+    include Sourced::Macros
 
-    getter liveness_timeout : Time::Span
+    ZERO64 = Int64.new(0)
 
-    def initialize(logger : Logger, liveness_timeout : Int32 = DEFAULT_LIVENESS_TIMEOUT)
-      @groups = Hash(String, Group).new
-      @lock = Mutex.new
-      @logger = logger
-      @liveness_timeout = liveness_timeout.milliseconds
-      @timers = Hash(String, Timer).new
-    end
+    event ConsumerCheckedIn, consumer_id : String
+    event GroupRebalancedAt, last_seq : Sourced::Event::Seq
 
-    def checkin(group_name : String, consumer_id : String)
-      register(group_name, consumer_id) do |cn|
-        @timers[cn.key].cancel && @timers.delete(cn.key) if @timers.has_key?(cn.key)
-        cn.checkin!
+    record Consumer, id : String, group_name : String, position : Int32, group_size : Int32
+
+    class ConsumerRecord
+      property id : String
+      property run_at : Time
+      property last_seq : Sourced::Event::Seq
+
+      def initialize(@id : String, @run_at : Time, @last_seq : Sourced::Event::Seq)
+
+      end
+
+      def touch!(time : Time)
+        @run_at = time
+        self
       end
     end
 
-    def checkout(consumer : Consumer | Nil) : Consumer | Nil
-      return unless consumer
+    class Group
+      property seq : Sourced::Event::Seq = Int64.new(0)
+      getter name : String
+      getter last_active_count : Int32
+      getter consumers : Hash(String, ConsumerRecord)
 
-      register(consumer.group_name, consumer.id) do |cn|
-        @timers[cn.key] ||= Timer.new(@liveness_timeout) do
-          remove_consumer(cn)
-        end
-        cn.checkout!
+      def initialize(@name, @liveness_span : Time::Span)
+        @last_active_count = 0
+        @consumers = Hash(String, ConsumerRecord).new { |h, k| h[k] = ConsumerRecord.new(k, Time.utc, ZERO64) }
+      end
+
+      def register(id : String, time : Time = Time.utc)
+        @consumers[id].touch!(time)
+      end
+
+      # A Consumer with :group_size and :position
+      def consumer_for(id : String) : Consumer
+        records = active_consumers
+        tup = records.each_with_index.find { |c, _| c.id == id }
+        raise "no consumer for #{id} in #{records.map(&.id)}" unless tup
+
+        record, position = tup
+        Consumer.new(
+          id: record.id,
+          group_name: name,
+          position: position,
+          group_size: records.size
+        )
+      end
+
+      def min_seq : Sourced::Event::Seq
+        active_consumers.map(&.last_seq).min
+      end
+
+      def active_consumers
+        threshold = Time.utc - @liveness_span
+        @consumers
+          .values
+          .select { |cn| cn.run_at >= threshold }
+          .sort_by(&.id)
       end
     end
 
-    private def remove_consumer(consumer : Consumer)
-      @lock.synchronize do
-        group = @groups[consumer.group_name]?
-        return unless group
-        group.remove(consumer.id)
-        @groups.delete(consumer.group_name) if group.size == 0
-        @logger.info info
+    class GroupProjector < Sourced::Projector(Group)
+      on ConsumerCheckedIn do |entity, evt|
+        entity.register(evt.payload.consumer_id, evt.timestamp)
       end
     end
 
-    def info
-      %(#{@groups.values.size} consumer groups: #{@groups.values.map { |g| g.info }.join(", ")})
-    end
-
-    def register(group_name : String, consumer_id : String, &block)
-      @lock.synchronize do
-        group = @groups[group_name]? || Group.new(name: group_name)
-        consumer = group.register(consumer_id)
-        @groups[group_name] = group
-        yield consumer
+    class GroupStage < Sourced::Stage(Group, GroupProjector)
+      def group
+        entity
       end
     end
 
-    def register(group_name : String, consumer_id : String) : Consumer
-      register(group_name, consumer_id) { |cn| cn }
+    getter logger : Logger
+    getter groups : Hash(String, Group)
+    getter liveness_span : Time::Span
+
+    def initialize(@store : Sourced::Store, @liveness_span : Time::Span, @logger : Logger)
+      @groups = Hash(String, Group).new { |h, k| h[k] = Group.new(k, @liveness_span) }
     end
 
-    def notify_consumer(consumer : Consumer, last_global_seq : Int64) : Consumer
-      register(consumer.group_name, consumer.id) do |cn|
-        cn.notify(last_global_seq)
-        cn
+    def checkin(group_name : String, consumer_id : String) : Consumer
+      stage = load(group_name)
+
+      last_active_count = stage.group.last_active_count
+      stage.apply(ConsumerCheckedIn.new(consumer_id: consumer_id))
+      if last_active_count != stage.group.last_active_count # consumers have been added or removed
+        stage.apply(GroupRebalancedAt.new(last_seq: stage.group.min_seq))
       end
+
+      save(group_name, stage)
+      stage.group.consumer_for(consumer_id)
+    # rescue ConcurrencyError # TODO
+      # reload, re-apply, retry?
     end
 
-    def minimum_global_seq_for(group_name : String) : Int64
-      @lock.synchronize do
-        group = @groups[group_name]?
-        group ? group.minimum_global_seq : ZERO64
-      end
+    # def ack(group_name : String, consumer_id : String, last_seq : Sourced::Event::Seq) : Bool
+    #   stage = load(group_name)
+    #   stage.apply(ConsumerAcknowledged.new(consumer_id: consumer_id, seq: last_seq))
+    #   save(group_name, stage)
+    #   true
+    # end
+
+    private def load(group_name : String) : GroupStage
+      group = groups[group_name]
+      GroupStage.new(group_name, group, GroupProjector.new, @store.read_stream(group_name, group.seq))
     end
 
-    def last_global_seq_for(group_name : String) : Int64
-      @lock.synchronize do
-        group = @groups[group_name]?
-        group ? group.last_global_seq : ZERO64
-      end
+    private def save(group_name : String, stage : Sourced::Stage)
+      # TODO: , stage.last_committed_seq)
+      @store.append_to_stream(group_name, stage.uncommitted_events)
     end
   end
 end
 
-require "./consumer_groups/group"
-require "./consumer_groups/consumer"
+# logger = Logger.new(STDOUT, level: Logger::DEBUG)
+# store = Sourced::MemStore.new
+# groups = SourcedStore::ConsumerGroups.new(store: store, liveness_span: 10.milliseconds, logger: logger)
+
+# puts (groups.checkin("g1", "c1") do |cn|
+#   cn.inspect
+# end)
+# puts (groups.checkin("g1", "c2") do |cn|
+#   cn.inspect
+# end)
+# puts (groups.checkin("g1", "c1") do |cn|
+#   cn.inspect
+# end)
+# puts (groups.checkin("g2", "c1") do |cn|
+#   cn.inspect
+# end)
+# sleep 1
+
+# puts (groups.checkin("g1", "c1") do |cn|
+#   cn.inspect
+# end)
+
+# pp store.read_stream("g1")
+# pp store.read_stream("g2")

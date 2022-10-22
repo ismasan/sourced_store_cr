@@ -8,7 +8,7 @@ module CLI
   class Serve < Admiral::Command
     define_flag port : Int32, default: 8080, short: p
     define_flag database : String, required: true, short: d
-    define_flag liveness_timeout : Int32, default: SourcedStore::ConsumerGroups::DEFAULT_LIVENESS_TIMEOUT, short: l
+    define_flag liveness_timeout : Int32, default: SourcedStore::Service::DEFAULT_LIVENESS_TIMEOUT, short: l
 
     # DB_URL = "postgres://localhost/carts_development"
 
