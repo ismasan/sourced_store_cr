@@ -8,7 +8,7 @@ module Sourced
     end
 
     def read_stream(stream_id : String, from_seq : Event::Seq | Nil = nil) : EventList
-      from_seq ||= Int64.new(0)
+      from_seq ||= Event::ZERO_SEQ
       @lock.synchronize do
         @streams[stream_id].select { |evt| evt.seq > from_seq }
       end
