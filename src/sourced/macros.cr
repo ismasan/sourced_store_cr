@@ -62,6 +62,10 @@ module Sourced
 
         end
 
+        def initialize(@timestamp, @seq, @payload : Payload)
+
+        end
+
         def with_seq(seq : Sourced::Event::Seq)
           self.class.new(seq, payload)
         end

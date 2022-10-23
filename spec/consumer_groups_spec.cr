@@ -45,40 +45,48 @@ describe SourcedStore::ConsumerGroups do
       store.append_to_stream(
         "g1",
         [
-          ack_event(
-            now - 20.seconds, # inactive
+          checkin_event(
+            now - 30.seconds, # inactive
             1,
-            consumer_id: "c1",
-            last_seq: 10
+            consumer_id: "c1"
           ),
-          ack_event(
-            now - 15.seconds, # inactive, will become active on checkin
-            1,
-            consumer_id: "c2",
-            last_seq: 11
+          checkin_event(
+            now - 17.seconds, # inactive
+            3,
+            consumer_id: "c2"
+          ),
+          checkin_event(
+            now - 7.seconds, # active
+            5,
+            consumer_id: "c3"
           ),
           ack_event(
             now - 5.seconds, # active
-            2,
+            6,
             consumer_id: "c3",
             last_seq: 4
           ),
+          checkin_event(
+            now - 4.seconds, # active
+            7,
+            consumer_id: "c4"
+          ),
           ack_event(
-            now - 3.seconds, # active
-            3,
+            now - 2.seconds, # active
+            8,
             consumer_id: "c4",
-            last_seq: 18
+            last_seq: 5
           ),
         ] of Sourced::Event
       )
 
-      cn = groups.checkin("g1", "c2")
-      cn.position.should eq(0)
+      cn = groups.checkin("g1", "c5")
+      cn.position.should eq(2)
       cn.group_size.should eq(3)
       cn.last_seq.should eq(4) # was rebalanced to least of active seqs
 
       stream = store.read_stream("g1")
-      stream.size.should eq(6)
+      stream.size.should eq(8)
       stream.last.should be_a(SourcedStore::ConsumerGroups::GroupRebalancedAt)
     end
   end
@@ -87,11 +95,12 @@ describe SourcedStore::ConsumerGroups do
     it "updates consumer's #last_seq and commits event" do
       groups.checkin("g1", "c1")
       groups.ack("g1", "c1", 10).should be_true
-      cn = groups.get_consumer_record("g1", "c1")
+      cn = groups.get_consumer("g1", "c1")
       cn.last_seq.should eq(10)
       g1_stream = store.read_stream("g1")
       g1_stream.size.should eq(2)
-      g1_stream.last.should be_a(SourcedStore::ConsumerGroups::ConsumerAcknowledged)
+      g1_stream[0].should be_a(SourcedStore::ConsumerGroups::ConsumerCheckedIn)
+      g1_stream[1].should be_a(SourcedStore::ConsumerGroups::ConsumerAcknowledged)
     end
 
     it "is a noop if consumer doesn't exist in group" do

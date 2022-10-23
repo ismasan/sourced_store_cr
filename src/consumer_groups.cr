@@ -17,48 +17,41 @@ module SourcedStore
 
     record Consumer,
       id : String,
-      group_name : String,
       position : Int32,
       group_size : Int32,
+      run_at : Time,
       last_seq : Sourced::Event::Seq
 
-    class ConsumerRecord
-      property id : String
-      property run_at : Time
-      property last_seq : Sourced::Event::Seq
-
-      def initialize(@id : String, @run_at : Time, @last_seq : Sourced::Event::Seq)
-
-      end
-
-      def touch!(time : Time)
-        @run_at = time
-        self
-      end
-    end
-
     class Group
+      alias ConsumerHash = Hash(String, Consumer)
+
       property seq : Sourced::Event::Seq = Int64.new(0)
       getter name : String
-      getter last_active_count : Int32
-      getter consumers : Hash(String, ConsumerRecord)
+      getter consumers : ConsumerHash
 
       def initialize(@name, @liveness_span : Time::Span)
-        @last_active_count = 0
-        @consumers = Hash(String, ConsumerRecord).new { |h, k| h[k] = ConsumerRecord.new(k, Time.utc, ZERO64) }
+        @consumers = ConsumerHash.new
+        # @consumers = ConsumerHash.new { |h, k|
+        #   h[k] = Consumer.new(k, 0, 1, Time.utc, ZERO64)
+        # }
       end
 
-      def register(id : String, time : Time = Time.utc)
-        cn = @consumers[id].touch!(time)
-        @last_active_count = active_consumers.size
-        cn
+      def register(id : String, time : Time)
+        cn = if has_consumer?(id)
+               consumers[id].copy_with(run_at: time)
+             else
+               Consumer.new(id, 0, 1, time, ZERO64)
+             end
+        @consumers[id] = cn
+        @consumers = update_liveness_window(@consumers, time)
       end
 
-      def ack(id : String, last_seq : Sourced::Event::Seq, time : Time) : ConsumerRecord
-        cn = @consumers[id]
-        cn.touch!(time)
-        cn.last_seq = last_seq
-        cn
+      def ack(id : String, last_seq : Sourced::Event::Seq, time : Time) : Bool
+        return false unless has_consumer?(id)
+
+        cn = @consumers[id].copy_with(run_at: time, last_seq: last_seq)
+        @consumers[id] = cn
+        true
       end
 
       def has_consumer?(consumer_id : String) : Bool
@@ -67,34 +60,32 @@ module SourcedStore
 
       # A Consumer with :group_size and :position
       def consumer_for(id : String) : Consumer
-        records = active_consumers
-        tup = records.each_with_index.find { |c, _| c.id == id }
-        raise "no consumer for #{id} in #{records.map(&.id)}" unless tup
+        ordered = consumers.values.sort_by(&.id)
+        tup = ordered.each_with_index.find { |c, _| c.id == id }
+        raise "no consumer for #{id} in #{ordered.map(&.id)}" unless tup
+        cn, position = tup
 
-        record, position = tup
-        Consumer.new(
-          id: record.id,
-          group_name: name,
-          position: position,
-          group_size: records.size,
-          last_seq: record.last_seq
-        )
+        cn.copy_with(position: position, group_size: ordered.size)
       end
 
       def min_seq : Sourced::Event::Seq
-        active_consumers.map(&.last_seq).min
+        seqs = consumers.values.map(&.last_seq)
+        seqs.any? ? seqs.min : ZERO64
       end
 
-      def active_consumers
-        threshold = Time.utc - @liveness_span
-        consumers
-          .values
-          .select { |cn| cn.run_at >= threshold }
-          .sort_by(&.id)
+      def update_liveness_window(cns : ConsumerHash, time : Time) : ConsumerHash
+        threshold = time - @liveness_span
+        cns.each_with_object(ConsumerHash.new) do |(k, cn), ret|
+          ret[k] = cn if cn.run_at >= threshold
+        end
+      end
+
+      def any_consumer_not_at?(seq : Sourced::Event::Seq) : Bool
+        consumers.values.any? { |cn| cn.last_seq != seq }
       end
 
       def rebalance_at(last_seq : Sourced::Event::Seq)
-        consumers.values.each { |cn| cn.last_seq = last_seq }
+        @consumers = @consumers.transform_values { |cn| cn.copy_with(last_seq: last_seq) }
       end
     end
 
@@ -129,10 +120,12 @@ module SourcedStore
     def checkin(group_name : String, consumer_id : String) : Consumer
       stage = load(group_name)
 
-      last_active_count = stage.group.last_active_count
+      last_active_count = stage.group.consumers.size
+      min_seq = stage.group.min_seq
       stage.apply(ConsumerCheckedIn.new(consumer_id: consumer_id))
-      if last_active_count != stage.group.last_active_count # consumers have been added or removed
-        stage.apply(GroupRebalancedAt.new(last_seq: stage.group.min_seq))
+
+      if last_active_count != stage.group.consumers.size && stage.group.any_consumer_not_at?(min_seq) # consumers have been added or removed
+        stage.apply(GroupRebalancedAt.new(last_seq: min_seq))
       end
 
       save(group_name, stage)
@@ -150,7 +143,7 @@ module SourcedStore
       true
     end
 
-    def get_consumer_record(group_name : String, consumer_id : String) : ConsumerRecord
+    def get_consumer(group_name : String, consumer_id : String) : Consumer
       groups[group_name].consumers[consumer_id]
     end
 
