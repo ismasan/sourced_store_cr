@@ -12,9 +12,15 @@ module SourcedStore
     ZERO64 = Int64.new(0)
 
     event ConsumerCheckedIn, consumer_id : String
+    event ConsumerAcknowledged, consumer_id : String, last_seq : Sourced::Event::Seq
     event GroupRebalancedAt, last_seq : Sourced::Event::Seq
 
-    record Consumer, id : String, group_name : String, position : Int32, group_size : Int32
+    record Consumer,
+      id : String,
+      group_name : String,
+      position : Int32,
+      group_size : Int32,
+      last_seq : Sourced::Event::Seq
 
     class ConsumerRecord
       property id : String
@@ -43,7 +49,20 @@ module SourcedStore
       end
 
       def register(id : String, time : Time = Time.utc)
-        @consumers[id].touch!(time)
+        cn = @consumers[id].touch!(time)
+        @last_active_count = active_consumers.size
+        cn
+      end
+
+      def ack(id : String, last_seq : Sourced::Event::Seq, time : Time) : ConsumerRecord
+        cn = @consumers[id]
+        cn.touch!(time)
+        cn.last_seq = last_seq
+        cn
+      end
+
+      def has_consumer?(consumer_id : String) : Bool
+        consumers.has_key?(consumer_id)
       end
 
       # A Consumer with :group_size and :position
@@ -57,7 +76,8 @@ module SourcedStore
           id: record.id,
           group_name: name,
           position: position,
-          group_size: records.size
+          group_size: records.size,
+          last_seq: record.last_seq
         )
       end
 
@@ -67,16 +87,28 @@ module SourcedStore
 
       def active_consumers
         threshold = Time.utc - @liveness_span
-        @consumers
+        consumers
           .values
           .select { |cn| cn.run_at >= threshold }
           .sort_by(&.id)
+      end
+
+      def rebalance_at(last_seq : Sourced::Event::Seq)
+        consumers.values.each { |cn| cn.last_seq = last_seq }
       end
     end
 
     class GroupProjector < Sourced::Projector(Group)
       on ConsumerCheckedIn do |entity, evt|
         entity.register(evt.payload.consumer_id, evt.timestamp)
+      end
+
+      on ConsumerAcknowledged do |entity, evt|
+        entity.ack(evt.payload.consumer_id, evt.payload.last_seq, evt.timestamp)
+      end
+
+      on GroupRebalancedAt do |entity, evt|
+        entity.rebalance_at(evt.payload.last_seq)
       end
     end
 
@@ -109,21 +141,29 @@ module SourcedStore
       # reload, re-apply, retry?
     end
 
-    # def ack(group_name : String, consumer_id : String, last_seq : Sourced::Event::Seq) : Bool
-    #   stage = load(group_name)
-    #   stage.apply(ConsumerAcknowledged.new(consumer_id: consumer_id, seq: last_seq))
-    #   save(group_name, stage)
-    #   true
-    # end
+    def ack(group_name : String, consumer_id : String, last_seq : Sourced::Event::Seq) : Bool
+      stage = load(group_name)
+      if stage.group.has_consumer?(consumer_id)
+        stage.apply(ConsumerAcknowledged.new(consumer_id: consumer_id, last_seq: last_seq))
+      end
+      save(group_name, stage)
+      true
+    end
 
-    private def load(group_name : String) : GroupStage
+    def get_consumer_record(group_name : String, consumer_id : String) : ConsumerRecord
+      groups[group_name].consumers[consumer_id]
+    end
+
+    def load(group_name : String) : GroupStage
       group = groups[group_name]
       GroupStage.new(group_name, group, GroupProjector.new, @store.read_stream(group_name, group.seq))
     end
 
     private def save(group_name : String, stage : Sourced::Stage)
       # TODO: , stage.last_committed_seq)
-      @store.append_to_stream(group_name, stage.uncommitted_events)
+      if stage.uncommitted_events.any?
+        @store.append_to_stream(group_name, stage.uncommitted_events)
+      end
     end
   end
 end
