@@ -87,7 +87,7 @@ describe SourcedStore::ConsumerGroups do
 
       stream = store.read_stream("g1")
       stream.size.should eq(8)
-      stream.last.should be_a(SourcedStore::ConsumerGroups::GroupRebalancedAt)
+      stream.last.should be_a(SourcedStore::ConsumerGroups::Events::GroupRebalancedAt)
     end
   end
 
@@ -99,8 +99,8 @@ describe SourcedStore::ConsumerGroups do
       cn.last_seq.should eq(10)
       g1_stream = store.read_stream("g1")
       g1_stream.size.should eq(2)
-      g1_stream[0].should be_a(SourcedStore::ConsumerGroups::ConsumerCheckedIn)
-      g1_stream[1].should be_a(SourcedStore::ConsumerGroups::ConsumerAcknowledged)
+      g1_stream[0].should be_a(SourcedStore::ConsumerGroups::Events::ConsumerCheckedIn)
+      g1_stream[1].should be_a(SourcedStore::ConsumerGroups::Events::ConsumerAcknowledged)
     end
 
     it "is a noop if consumer doesn't exist in group" do
@@ -134,20 +134,20 @@ describe SourcedStore::ConsumerGroups do
 end
 
 private def checkin_event(time : Time, seq : Int32, consumer_id : String)
-  SourcedStore::ConsumerGroups::ConsumerCheckedIn.new(
+  SourcedStore::ConsumerGroups::Events::ConsumerCheckedIn.new(
     time,
     Int64.new(seq),
-    SourcedStore::ConsumerGroups::ConsumerCheckedIn::Payload.new(
+    SourcedStore::ConsumerGroups::Events::ConsumerCheckedIn::Payload.new(
       consumer_id: consumer_id
     )
   )
 end
 
 private def ack_event(time : Time, seq : Int32, consumer_id : String, last_seq : Int32)
-  SourcedStore::ConsumerGroups::ConsumerAcknowledged.new(
+  SourcedStore::ConsumerGroups::Events::ConsumerAcknowledged.new(
     time,
     Int64.new(seq),
-    SourcedStore::ConsumerGroups::ConsumerAcknowledged::Payload.new(
+    SourcedStore::ConsumerGroups::Events::ConsumerAcknowledged::Payload.new(
       consumer_id: consumer_id,
       last_seq: Int64.new(last_seq)
     )

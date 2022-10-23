@@ -1,7 +1,8 @@
 module Sourced
   class Event
     alias Seq = Int64
-    getter seq : Seq = Int64.new(0)
+    ZERO_SEQ = Seq.new(0)
+    getter seq : Seq = ZERO_SEQ
     getter timestamp : Time = Time.utc
 
     class Payload

@@ -1,67 +1,70 @@
+require "./consumer"
+
 module SourcedStore
   class ConsumerGroups
     class Group
+      alias ConsumerHash = Hash(String, Consumer)
+
+      property seq : Sourced::Event::Seq = Int64.new(0)
       getter name : String
+      getter consumers : ConsumerHash
 
-      def initialize(@name)
-        @consumers = Hash(String, Consumer).new
-        @count = 0
+      def initialize(@name, @liveness_span : Time::Span)
+        @consumers = ConsumerHash.new
       end
 
-      def info
-        %([#{name}: #{size} consumers])
+      def register(id : String, time : Time)
+        cn = if has_consumer?(id)
+               consumers[id].copy_with(run_at: time)
+             else
+               Consumer.new(id, 0, 1, time, Sourced::Event::ZERO_SEQ)
+             end
+        @consumers[id] = cn
+        @consumers = update_liveness_window(@consumers, time)
       end
 
-      def register(consumer_id : String)
-        consumer = @consumers[consumer_id]?
-        return consumer if consumer
+      def ack(id : String, last_seq : Sourced::Event::Seq, time : Time) : Bool
+        return false unless has_consumer?(id)
 
-        seq = last_global_seq
-        consumer = Consumer.new(
-          group: self,
-          id: consumer_id,
-          number: @count,
-          last_global_seq: seq
-        )
-        @consumers[consumer_id] = consumer
-        rebalance
-        @count += 1
-        consumer
+        cn = @consumers[id].copy_with(run_at: time, last_seq: last_seq)
+        @consumers[id] = cn
+        true
       end
 
-      def remove(consumer_id : String)
-        return unless @consumers.has_key?(consumer_id)
-
-        cn = @consumers.delete(consumer_id)
-        return unless cn
-        rebalance
-        @count = @consumers.values.size
+      def has_consumer?(consumer_id : String) : Bool
+        consumers.has_key?(consumer_id)
       end
 
-      private def rebalance
-        seq = minimum_global_seq
-        num = 0
-        @consumers.values.each do |c|
-          c.rebalance(num, seq)
-          num += 1
+      # A Consumer with :group_size and :position
+      def consumer_for(id : String) : Consumer
+        ordered = consumers.values.sort_by(&.id)
+        tup = ordered.each_with_index.find { |c, _| c.id == id }
+        raise "no consumer for #{id} in #{ordered.map(&.id)}" unless tup
+        cn, position = tup
+
+        cn.copy_with(position: position, group_size: ordered.size)
+      end
+
+      def min_seq : Sourced::Event::Seq
+        seqs = consumers.values.map(&.last_seq)
+        seqs.any? ? seqs.min : Sourced::Event::ZERO_SEQ
+      end
+
+      def update_liveness_window(cns : ConsumerHash, time : Time) : ConsumerHash
+        threshold = time - @liveness_span
+        cns.each_with_object(ConsumerHash.new) do |(k, cn), ret|
+          ret[k] = cn if cn.run_at >= threshold
         end
       end
 
-      def minimum_global_seq : Int64
-        return ZERO64 unless @consumers.any?
-
-        @consumers.values.sort_by { |c| c.last_global_seq }.first.last_global_seq
+      def any_consumer_not_at?(seq : Sourced::Event::Seq) : Bool
+        consumers.values.any? { |cn| cn.last_seq != seq }
       end
 
-      def last_global_seq : Int64
-        return ZERO64 unless @consumers.any?
-
-        @consumers.values.sort_by { |c| c.last_global_seq }.last.last_global_seq
-      end
-
-      def size
-        @count
+      def rebalance_at(last_seq : Sourced::Event::Seq)
+        @consumers = @consumers.transform_values { |cn| cn.copy_with(last_seq: last_seq) }
       end
     end
+
   end
 end
