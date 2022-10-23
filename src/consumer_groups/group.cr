@@ -17,7 +17,7 @@ module SourcedStore
         cn = if has_consumer?(id)
                consumers[id].copy_with(run_at: time)
              else
-               Consumer.new(id, 0, 1, time, Sourced::Event::ZERO_SEQ)
+               Consumer.new(id, name, 0, 1, time, Sourced::Event::ZERO_SEQ)
              end
         @consumers[id] = cn
         @consumers = update_liveness_window(@consumers, time)
@@ -65,6 +65,5 @@ module SourcedStore
         @consumers = @consumers.transform_values { |cn| cn.copy_with(last_seq: last_seq) }
       end
     end
-
   end
 end

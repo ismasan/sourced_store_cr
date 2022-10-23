@@ -29,22 +29,6 @@ module SourcedStore
     end
   end
 
-  struct Consumer
-    getter group_name : String
-    getter id : String
-
-    def initialize(@group_name : String, @id : String)
-    end
-
-    def info : String
-      key
-    end
-
-    def key : String
-      [group_name, id].join(":")
-    end
-  end
-
   class Service < SourcedStore::TwirpTransport::EventStore
     module ErrorCodes
       CONCURRENT_WRITE_LOCK_ERROR = "concurrent_write_lock_error"
@@ -78,7 +62,7 @@ module SourcedStore
     # $3 consumer_id
     # $4 batch_size
     READ_CATEGORY_SQL = %(
-      SELECT * FROM event_store.read_category($1::varchar, $2::varchar, $3::varchar, $4::integer)
+      SELECT * FROM event_store.read_category($1::varchar, $2::integer, $3::integer, $4::bigint, $5::integer)
     )
 
     ACK_CONSUMER_SQL = %(
@@ -90,11 +74,16 @@ module SourcedStore
     @db : DB::Database
     @listen_conn : PG::ListenConnection
 
-    def initialize(logger : Logger, db_url : String, liveness_timeout : Int32 = ConsumerGroups::DEFAULT_LIVENESS_TIMEOUT)
+    def initialize(logger : Logger, db_url : String, liveness_timeout : Int32)
       @logger = logger
       @db_url = db_url
       @db = DB.open(@db_url)
       @liveness_timeout = liveness_timeout
+      @consumer_groups = SourcedStore::ConsumerGroups.new(
+        store: Sourced::MemStore.new,
+        liveness_span: @liveness_timeout.milliseconds,
+        logger: @logger
+      )
       # ToDO: here the event should include the hash_64(stream_id)
       # so that this consumer can ignore the trigger and keep waiting for another one
       # relevant to this consumer
@@ -198,7 +187,7 @@ module SourcedStore
       category = req.category.as(String)
       consumer_group : String = req.consumer_group || "global-group"
       consumer_id : String = req.consumer_id || "global-consumer"
-      consumer = Consumer.new(group_name: consumer_group, id: consumer_id)
+      consumer = @consumer_groups.checkin(consumer_group, consumer_id)
       batch_size : Int32 = req.batch_size || 50
       wait_timeout : Time::Span = (req.wait_timeout || DEFAULT_WAIT_TIMEOUT).milliseconds
 
@@ -246,17 +235,12 @@ module SourcedStore
 
     def ack_consumer(consumer_group : String, consumer_id : String, last_seq : Int64) : Bool
       @logger.info "ACK #{consumer_group} #{consumer_id} at #{last_seq}"
-      @db.exec(
-        ACK_CONSUMER_SQL,
-        consumer_group,
-        consumer_id,
-        last_seq
-      )
+      @consumer_groups.ack(consumer_group, consumer_id, last_seq)
 
       true
     end
 
-    def ack_consumer(consumer : Consumer, last_seq : Int64) : Bool
+    def ack_consumer(consumer : ConsumerGroups::Consumer, last_seq : Int64) : Bool
       ack_consumer(consumer_group: consumer.group_name, consumer_id: consumer.id, last_seq: last_seq)
     end
 
@@ -316,14 +300,15 @@ module SourcedStore
 
     private def read_category_with_consumer(
       category : String,
-      consumer : Consumer,
+      consumer : ConsumerGroups::Consumer,
       batch_size : Int32
     ) : EventList
       query = @db.query(
         READ_CATEGORY_SQL,
         category,
-        consumer.group_name,
-        consumer.id,
+        consumer.group_size,
+        consumer.position,
+        consumer.last_seq,
         batch_size
       )
       hydrate_events(query)
