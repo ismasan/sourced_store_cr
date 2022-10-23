@@ -5,6 +5,14 @@ module Sourced
     getter seq : Seq = ZERO_SEQ
     getter timestamp : Time = Time.utc
 
+    def self.topic : String
+      ""
+    end
+
+    def topic : String
+      self.class.topic
+    end
+
     class Payload
 
     end

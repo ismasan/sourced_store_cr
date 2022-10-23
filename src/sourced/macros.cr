@@ -16,7 +16,7 @@ module Sourced
     end
 
     # event NameUpdated, name : String
-    macro event(class_name, *properties)
+    macro event(class_name, topic, *properties)
       class {{class_name}} < Sourced::Event
         class Payload < Sourced::Event::Payload
           {% for property in properties %}
@@ -32,6 +32,10 @@ module Sourced
         end
 
         getter payload : Payload
+
+        def self.topic : String
+          "{{topic.id}}"
+        end
 
         def initialize(seq : Sourced::Event::Seq | Int32, {{
            *properties.map do |field|

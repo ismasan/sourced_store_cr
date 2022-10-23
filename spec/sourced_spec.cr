@@ -9,6 +9,10 @@ describe Sourced do
     TestApp::AgeUpdated.new(seq: 2, new_age: 30),
   ] of Sourced::Event
 
+  it "defines events" do
+    TestApp::NameUpdated.topic.should eq("tests.name_updated")
+  end
+
   it "applies event stream to entity" do
     user = TestApp::User.new
     stage = TestApp::UserStage.new("g1", user, TestApp::UserProjector.new, stream)
@@ -33,6 +37,7 @@ describe Sourced do
     stage.uncommitted_events[0].should be_a(TestApp::NameUpdated)
     stage.uncommitted_events[0].seq.should eq(3)
     stage.uncommitted_events[0].timestamp.should be_a(Time)
+    stage.uncommitted_events[0].topic.should eq("tests.name_updated")
     stage.uncommitted_events[0].as(TestApp::NameUpdated).payload.new_name.should eq("Ismael")
     stage.uncommitted_events[1].should be_a(TestApp::AgeUpdated)
     stage.uncommitted_events[1].seq.should eq(4)
