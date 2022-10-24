@@ -187,9 +187,9 @@ module SourcedStore
       category = req.category.as(String)
       consumer_group : String = req.consumer_group || "global-group"
       consumer_id : String = req.consumer_id || "global-consumer"
-      consumer = @consumer_groups.checkin(consumer_group, consumer_id)
       batch_size : Int32 = req.batch_size || 50
       wait_timeout : Time::Span = (req.wait_timeout || DEFAULT_WAIT_TIMEOUT).milliseconds
+      consumer = @consumer_groups.checkin(consumer_group, consumer_id)
 
       events = read_category_with_consumer(category, consumer, batch_size)
       if !events.any? && !wait_timeout.zero? # blocking poll
@@ -203,14 +203,12 @@ module SourcedStore
         end
 
         if chan.receive
+          consumer = @consumer_groups.checkin(consumer_group, consumer_id)
           events = read_category_with_consumer(category, consumer, batch_size)
         end
         @pollers.delete poller_key
       end
 
-      if events.any?
-        ack_consumer(consumer, events.last.global_seq.as(Int64))
-      end
       @logger.info "finished #{category} #{consumer.info} got #{events.size} events"
       TwirpTransport::ReadCategoryResponse.new(events: events)
     end

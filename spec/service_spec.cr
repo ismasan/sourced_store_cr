@@ -156,6 +156,7 @@ describe SourcedStore::Service do
         consumer_id: "c1"
       )
       c1_events.size.should eq(2)
+      service.ack_consumer("sale-report", "c1", c1_events.last.global_seq.as(Int64))
 
       # Group is now up to date, so a new consumer has no new events to fetch
       c2_events = service.read_category(
@@ -193,6 +194,8 @@ describe SourcedStore::Service do
         consumer_group: "sale-report",
         consumer_id: "c1"
       )
+      service.ack_consumer("sale-report", "c1", c1_events.last.global_seq.as(Int64))
+
       c1_events.size.should eq(1)
       c1_events.map(&.stream_id).should eq([stream_id1])
 
