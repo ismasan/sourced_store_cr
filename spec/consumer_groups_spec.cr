@@ -157,6 +157,18 @@ describe SourcedStore::ConsumerGroups do
       c2.last_seq.should eq(4)
       c2.run_at.to_s(time_format).should eq((now + 10.seconds).to_s(time_format))
     end
+
+    it "assigns positions on a first-come, first-serve basis" do
+      groups.checkin("g1", "c2") # c2 registers first
+      groups.checkin("g1", "c1")
+
+      c1 = groups.checkin("g1", "c1")
+      c2 = groups.checkin("g1", "c2")
+      c1.position.should eq(1)
+      c2.position.should eq(0)
+      c1.group_size.should eq(2)
+      c2.group_size.should eq(2)
+    end
   end
 
   describe "#ack" do

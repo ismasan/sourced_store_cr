@@ -18,7 +18,7 @@ module SourcedStore
         cn = if has_consumer?(id)
                consumers[id].copy_with(run_at: run_at)
              else
-               Consumer.new(id, name, 0, 1, run_at, min_seq)
+               Consumer.new(id, time, name, 0, 1, run_at, min_seq)
              end
         @consumers[id] = cn
         @consumers = update_liveness_window(@consumers, time)
@@ -37,11 +37,8 @@ module SourcedStore
       end
 
       # A Consumer with :group_size and :position
-      # TODO: assigning position by id ASC is problematic.
-      # if C2 checks in first, it gets pos:0
-      # then C1 checks in and it also gets pos:0 because it's now the lowest ID
       def consumer_for(id : String) : Consumer
-        ordered = consumers.values.sort_by(&.id)
+        ordered = consumers.values.sort_by(&.registered_at)
         tup = ordered.each_with_index.find { |c, _| c.id == id }
         raise "no consumer for #{id} in #{ordered.map(&.id)}" unless tup
         cn, position = tup
