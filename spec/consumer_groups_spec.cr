@@ -126,6 +126,24 @@ describe SourcedStore::ConsumerGroups do
       cn.last_seq.should eq(4) # was rebalanced to least of active seqs
     end
 
+    it "optionally auto-acks on checkin" do
+      groups.checkin("g1", "c2")
+      cn = groups.checkin("g1", "c2", last_seq: Sourced::Event::Seq.new(5))
+      cn.position.should eq(0)
+      cn.group_size.should eq(1)
+      cn.last_seq.should eq(5)
+      events = store.read_stream("g1")
+      events.size.should eq(3)
+      events.last.should be_a(SourcedStore::ConsumerGroups::Events::ConsumerAcknowledged)
+    end
+
+    it "does not auto-ack if consumer is not active" do
+      cn = groups.checkin("g1", "c2", last_seq: Sourced::Event::Seq.new(5))
+      cn.position.should eq(0)
+      cn.group_size.should eq(1)
+      cn.last_seq.should eq(0)
+    end
+
     it "optionally sets #run_at to arbitrary date in future, while maintaining rebalancing logic" do
       now = Time.utc
       time_format = "%Y-%m-%d : %H:%M:%S"

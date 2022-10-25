@@ -36,12 +36,16 @@ module SourcedStore
       @groups = Hash(String, Group).new { |h, k| h[k] = Group.new(k, @liveness_span) }
     end
 
-    def checkin(group_name : String, consumer_id : String, debounce : Time::Span = ZERO_DURATION) : Consumer
+    def checkin(group_name : String, consumer_id : String, debounce : Time::Span = ZERO_DURATION, last_seq : Sourced::Event::Seq | Nil = nil) : Consumer
       stage = load(group_name)
 
       last_active_count = stage.group.consumers.size
       min_seq = stage.group.min_seq
       stage.apply(Events::ConsumerCheckedIn.new(consumer_id: consumer_id, debounce: debounce))
+
+      if last_seq
+        ack_consumer(stage, consumer_id, last_seq)
+      end
 
       if last_active_count != stage.group.consumers.size && stage.group.any_consumer_not_at?(min_seq) # consumers have been added or removed
         logger.info "[#{group_name}] rebalancing all consumers at #{min_seq}"
@@ -56,9 +60,7 @@ module SourcedStore
 
     def ack(group_name : String, consumer_id : String, last_seq : Sourced::Event::Seq) : Bool
       stage = load(group_name)
-      if stage.group.has_consumer?(consumer_id)
-        stage.apply(Events::ConsumerAcknowledged.new(consumer_id: consumer_id, last_seq: last_seq))
-      end
+      ack_consumer(stage, consumer_id, last_seq)
       save(group_name, stage)
       true
     end
@@ -70,6 +72,12 @@ module SourcedStore
     def load(group_name : String) : GroupStage
       group = groups[group_name]
       GroupStage.new(group_name, group, GroupProjector.new, @store.read_stream(group_name, group.seq))
+    end
+
+    private def ack_consumer(stage : GroupStage, consumer_id : String, last_seq : Sourced::Event::Seq)
+      if stage.group.has_consumer?(consumer_id)
+        stage.apply(Events::ConsumerAcknowledged.new(consumer_id: consumer_id, last_seq: last_seq))
+      end
     end
 
     private def save(group_name : String, stage : Sourced::Stage)
