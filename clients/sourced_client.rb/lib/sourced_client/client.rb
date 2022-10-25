@@ -39,18 +39,19 @@ module SourcedClient
       @shutting_down = true
     end
 
-    def read_category(category, consumer_group: nil, consumer_id: nil)
+    def read_category(category, consumer_group: nil, consumer_id: nil, last_seq: nil)
       resp = client.read_category(
         category: category,
         consumer_group: consumer_group,
-        consumer_id: consumer_id
+        consumer_id: consumer_id,
+        last_seq: last_seq
       )
 
       deserialize_events(resp.data.events)
     end
 
     def stream_category(category, consumer_group: nil, consumer_id: nil)
-      last_read_seq = 0
+      last_read_seq = nil
 
       Enumerator.new do |yielder|
         while !@shutting_down do
@@ -58,20 +59,13 @@ module SourcedClient
             events = read_category(
               category,
               consumer_group: consumer_group,
-              consumer_id: consumer_id
+              consumer_id: consumer_id,
+              last_seq: last_read_seq # auto-acks previous batch
             )
 
             events.each do |e|
               yielder << e
               last_read_seq = e[:global_seq]
-            end
-
-            if events.any?
-              client.ack_consumer(
-                consumer_group: consumer_group,
-                consumer_id: consumer_id,
-                last_seq: last_read_seq
-              )
             end
           rescue Faraday::ConnectionFailed
             puts 'Disconnected. Retrying in 5...'
