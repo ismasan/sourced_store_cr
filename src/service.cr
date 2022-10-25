@@ -189,7 +189,8 @@ module SourcedStore
       consumer_id : String = req.consumer_id || "global-consumer"
       batch_size : Int32 = req.batch_size || 50
       wait_timeout : Time::Span = (req.wait_timeout || DEFAULT_WAIT_TIMEOUT).milliseconds
-      consumer = @consumer_groups.checkin(consumer_group, consumer_id)
+      # Checkin a consumer, making sure to debounce its liveness time period for the duration of the wait timeout.
+      consumer = @consumer_groups.checkin(consumer_group, consumer_id, wait_timeout)
 
       events = read_category_with_consumer(category, consumer, batch_size)
       if !events.any? && !wait_timeout.zero? # blocking poll

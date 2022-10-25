@@ -6,9 +6,11 @@ require "./consumer_groups/group"
 
 module SourcedStore
   class ConsumerGroups
+    ZERO_DURATION = 0.milliseconds
+
     class GroupProjector < Sourced::Projector(Group)
       on Events::ConsumerCheckedIn do |entity, evt|
-        entity.register(evt.payload.consumer_id, evt.timestamp)
+        entity.register(evt.payload.consumer_id, evt.timestamp, evt.payload.debounce)
       end
 
       on Events::ConsumerAcknowledged do |entity, evt|
@@ -34,12 +36,12 @@ module SourcedStore
       @groups = Hash(String, Group).new { |h, k| h[k] = Group.new(k, @liveness_span) }
     end
 
-    def checkin(group_name : String, consumer_id : String) : Consumer
+    def checkin(group_name : String, consumer_id : String, debounce : Time::Span = ZERO_DURATION) : Consumer
       stage = load(group_name)
 
       last_active_count = stage.group.consumers.size
       min_seq = stage.group.min_seq
-      stage.apply(Events::ConsumerCheckedIn.new(consumer_id: consumer_id))
+      stage.apply(Events::ConsumerCheckedIn.new(consumer_id: consumer_id, debounce: debounce))
 
       if last_active_count != stage.group.consumers.size && stage.group.any_consumer_not_at?(min_seq) # consumers have been added or removed
         logger.info "[#{group_name}] rebalancing all consumers at #{min_seq}"

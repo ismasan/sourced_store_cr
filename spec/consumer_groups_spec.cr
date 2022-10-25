@@ -89,6 +89,74 @@ describe SourcedStore::ConsumerGroups do
       stream.size.should eq(8)
       stream.last.should be_a(SourcedStore::ConsumerGroups::Events::GroupRebalancedAt)
     end
+
+    it "keeps track of group's minimum seq even when all consumers are inactive" do
+      now = Time.utc
+      store.append_to_stream(
+        "g1",
+        [
+          checkin_event(
+            now - 60.seconds,
+            1,
+            consumer_id: "c1"
+          ),
+          ack_event(
+            now - 56.seconds,
+            2,
+            consumer_id: "c1",
+            last_seq: 4
+          ),
+          checkin_event(
+            now - 47.seconds,
+            3,
+            consumer_id: "c2"
+          ),
+          ack_event(
+            now - 47.seconds,
+            4,
+            consumer_id: "c2",
+            last_seq: 14
+          ),
+        ] of Sourced::Event
+      )
+
+      cn = groups.checkin("g1", "c2")
+      cn.position.should eq(0)
+      cn.group_size.should eq(1)
+      cn.last_seq.should eq(4) # was rebalanced to least of active seqs
+    end
+
+    it "optionally sets #run_at to arbitrary date in future, while maintaining rebalancing logic" do
+      now = Time.utc
+      time_format = "%Y-%m-%d : %H:%M:%S"
+      store.append_to_stream(
+        "g1",
+        [
+          checkin_event(
+            now - 15.seconds,
+            1,
+            consumer_id: "c1"
+          ),
+          ack_event(
+            now - 9.seconds,
+            2,
+            consumer_id: "c1",
+            last_seq: 4
+          ),
+          checkin_event( # new consumer. Starts at group's min_seq
+            now - 8.seconds,
+            3,
+            consumer_id: "c2"
+          ),
+        ] of Sourced::Event
+      )
+
+      c2 = groups.checkin("g1", "c2", 10.seconds)
+      c2.position.should eq(1)
+      c2.group_size.should eq(2)
+      c2.last_seq.should eq(4)
+      c2.run_at.to_s(time_format).should eq((now + 10.seconds).to_s(time_format))
+    end
   end
 
   describe "#ack" do

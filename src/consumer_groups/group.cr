@@ -13,11 +13,12 @@ module SourcedStore
         @consumers = ConsumerHash.new
       end
 
-      def register(id : String, time : Time)
+      def register(id : String, time : Time, debounce : Time::Span = ZERO_DURATION)
+        run_at = time + debounce
         cn = if has_consumer?(id)
-               consumers[id].copy_with(run_at: time)
+               consumers[id].copy_with(run_at: run_at)
              else
-               Consumer.new(id, name, 0, 1, time, Sourced::Event::ZERO_SEQ)
+               Consumer.new(id, name, 0, 1, run_at, min_seq)
              end
         @consumers[id] = cn
         @consumers = update_liveness_window(@consumers, time)
@@ -36,6 +37,9 @@ module SourcedStore
       end
 
       # A Consumer with :group_size and :position
+      # TODO: assigning position by id ASC is problematic.
+      # if C2 checks in first, it gets pos:0
+      # then C1 checks in and it also gets pos:0 because it's now the lowest ID
       def consumer_for(id : String) : Consumer
         ordered = consumers.values.sort_by(&.id)
         tup = ordered.each_with_index.find { |c, _| c.id == id }
