@@ -74,6 +74,7 @@ module SourcedStore
         optional :consumer_group, :string, 3
         optional :consumer_id, :string, 4
         optional :wait_timeout, :int32, 5
+        optional :last_seq, :int64, 6
       end
     end
 

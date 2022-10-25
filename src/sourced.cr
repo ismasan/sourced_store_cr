@@ -7,4 +7,3 @@ require "./sourced/stage"
 
 module Sourced
 end
-

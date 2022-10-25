@@ -144,6 +144,28 @@ describe SourcedStore::Service do
       assert_same_event(events[2], order_event3)
     end
 
+    it "optionally auto-acks consumer to provided last_seq" do
+      service.reset!
+      service.append_to_stream!(stream_id1, append_req.events.as(SourcedStore::EventList))
+      events = service.read_stream(stream_id1)
+
+      # one request to checkin consumer
+      service.read_category(
+        category: "orders",
+        consumer_group: "sale-report",
+        consumer_id: "c1"
+      )
+
+      # Now another one, auto-acking at an event's last global_seq
+      c1_events = service.read_category(
+        category: "orders",
+        consumer_group: "sale-report",
+        consumer_id: "c1",
+        last_seq: events.first.global_seq
+      )
+      c1_events.size.should eq(1)
+    end
+
     it "partitions stream by consumers" do
       service.reset!
       service.append_to_stream!(stream_id1, append_req.events.as(SourcedStore::EventList))

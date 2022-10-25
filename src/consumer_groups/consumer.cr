@@ -8,7 +8,6 @@ module SourcedStore
       group_size : Int32,
       run_at : Time,
       last_seq : Sourced::Event::Seq do
-
       def info
         %([#{id}] pos:#{position} gsize:#{group_size} at:#{last_seq})
       end

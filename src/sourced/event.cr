@@ -14,7 +14,6 @@ module Sourced
     end
 
     class Payload
-
     end
   end
 

@@ -55,6 +55,7 @@ message ReadCategoryRequest {
   string consumer_group = 3;
   string consumer_id = 4;
   int32 wait_timeout = 5;
+  int64 last_seq = 6;
 }
 
 message ReadCategoryResponse {

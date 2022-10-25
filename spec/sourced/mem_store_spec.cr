@@ -8,20 +8,20 @@ describe Sourced::MemStore do
       store = Sourced::MemStore.new
       events : Sourced::EventList = [
         TestApp::NameUpdated.new(seq: 1, new_name: "Frank"),
-        TestApp::AgeUpdated.new(seq: 2, new_age: 34)
+        TestApp::AgeUpdated.new(seq: 2, new_age: 34),
       ]
 
       ret = store.append_to_stream("g1", events)
       ret.should be_true
 
       more_events : Sourced::EventList = [
-        TestApp::AgeUpdated.new(seq: 3, new_age: 35).as(Sourced::Event)
+        TestApp::AgeUpdated.new(seq: 3, new_age: 35).as(Sourced::Event),
       ]
 
       store.append_to_stream("g1", more_events)
 
       events_g2 : Sourced::EventList = [
-        TestApp::AgeUpdated.new(seq: 1, new_age: 20).as(Sourced::Event)
+        TestApp::AgeUpdated.new(seq: 1, new_age: 20).as(Sourced::Event),
       ]
 
       store.append_to_stream("g2", events_g2)
@@ -38,4 +38,3 @@ describe Sourced::MemStore do
     end
   end
 end
-

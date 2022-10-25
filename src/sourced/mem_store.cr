@@ -7,6 +7,13 @@ module Sourced
       @lock = Mutex.new
     end
 
+    def reset! : Bool
+      @lock.synchronize do
+        @streams = @streams.clear
+      end
+      true
+    end
+
     def read_stream(stream_id : String, from_seq : Event::Seq | Nil = nil) : EventList
       from_seq ||= Event::ZERO_SEQ
       @lock.synchronize do

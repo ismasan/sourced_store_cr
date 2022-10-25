@@ -36,6 +36,11 @@ module SourcedStore
       @groups = Hash(String, Group).new { |h, k| h[k] = Group.new(k, @liveness_span) }
     end
 
+    def reset!
+      @store.reset!
+      @groups = @groups.clear
+    end
+
     def checkin(group_name : String, consumer_id : String, debounce : Time::Span = ZERO_DURATION, last_seq : Sourced::Event::Seq | Nil = nil) : Consumer
       stage = load(group_name)
 
@@ -54,7 +59,7 @@ module SourcedStore
 
       save(group_name, stage)
       stage.group.consumer_for(consumer_id)
-    # rescue ConcurrencyError # TODO
+      # rescue ConcurrencyError # TODO
       # reload, re-apply, retry?
     end
 

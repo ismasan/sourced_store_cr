@@ -46,7 +46,7 @@ describe SourcedStore::ConsumerGroups do
         "g1",
         [
           checkin_event(
-            now - 30.seconds, # inactive
+            now - 30.seconds, # inactive
             1,
             consumer_id: "c1"
           ),

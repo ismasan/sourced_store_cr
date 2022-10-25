@@ -3,7 +3,7 @@ require "../src/sourced"
 module TestApp
   include Sourced::Macros
 
-  # The entity
+  # The entity
   class User
     property name : String = ""
     property age : Int32 = 0
@@ -27,4 +27,3 @@ module TestApp
   class UserStage < Sourced::Stage(User, UserProjector)
   end
 end
-

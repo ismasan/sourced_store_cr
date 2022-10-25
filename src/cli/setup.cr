@@ -71,7 +71,7 @@ module CLI
     SQL_INDICES = [
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_event_ids ON event_store.events (id)),
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_event_seqs ON event_store.events (stream_id, seq)),
-      %(CREATE INDEX IF NOT EXISTS index_on_event_categories ON event_store.events (event_store.event_category(topic)))
+      %(CREATE INDEX IF NOT EXISTS index_on_event_categories ON event_store.events (event_store.event_category(topic))),
     ]
 
     SQL_FN_EVENT_CATEGORY = <<-SQL

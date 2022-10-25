@@ -158,26 +158,31 @@ module SourcedStore
     end
 
     def read_stream(req : TwirpTransport::ReadStreamRequest) : TwirpTransport::ReadStreamResponse
-      sql = [SELECT_EVENTS_SQL, READ_STREAM_WHERE_SQL] of String
-
-      events = if req.upto_seq
-                 sql << READ_STREAM_AND_UPTO_SQL
-                 sql << READ_STREAM_ORDER_SQL
-                 hydrate_events(@db.query(sql.join(" "), req.stream_id, req.upto_seq))
-               else
-                 sql << READ_STREAM_ORDER_SQL
-                 hydrate_events(@db.query(sql.join(" "), req.stream_id))
-               end
+      events = read_stream(req.stream_id.as(String), req.upto_seq)
 
       TwirpTransport::ReadStreamResponse.new(events: events)
     end
 
-    def read_category(category : String, consumer_group : String, consumer_id : String) : EventList
+    def read_stream(stream_id : String, upto_seq : Int32 | Nil = nil) : EventList
+      sql = [SELECT_EVENTS_SQL, READ_STREAM_WHERE_SQL] of String
+
+      if upto_seq
+        sql << READ_STREAM_AND_UPTO_SQL
+        sql << READ_STREAM_ORDER_SQL
+        hydrate_events(@db.query(sql.join(" "), stream_id, upto_seq))
+      else
+        sql << READ_STREAM_ORDER_SQL
+        hydrate_events(@db.query(sql.join(" "), stream_id))
+      end
+    end
+
+    def read_category(category : String, consumer_group : String, consumer_id : String, last_seq : Int64 | Nil = nil) : EventList
       resp = read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: category,
         consumer_group: consumer_group,
         consumer_id: consumer_id,
-        wait_timeout: 0
+        wait_timeout: 0,
+        last_seq: last_seq
       ))
 
       resp.events.as(EventList)
@@ -190,7 +195,7 @@ module SourcedStore
       batch_size : Int32 = req.batch_size || 50
       wait_timeout : Time::Span = (req.wait_timeout || DEFAULT_WAIT_TIMEOUT).milliseconds
       # Checkin a consumer, making sure to debounce its liveness time period for the duration of the wait timeout.
-      consumer = @consumer_groups.checkin(consumer_group, consumer_id, wait_timeout)
+      consumer = @consumer_groups.checkin(consumer_group, consumer_id, wait_timeout, req.last_seq)
 
       events = read_category_with_consumer(category, consumer, batch_size)
       if !events.any? && !wait_timeout.zero? # blocking poll
@@ -255,6 +260,7 @@ module SourcedStore
       @logger.info "Resetting DB. Careful!"
       @db.exec("TRUNCATE event_store.events RESTART IDENTITY")
       @db.exec("DELETE FROM event_store.consumers")
+      @consumer_groups.reset!
     end
 
     private def time_to_protobuf_timestamp(time : Time)
