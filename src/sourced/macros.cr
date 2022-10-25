@@ -15,6 +15,48 @@ module Sourced
       end
     end
 
+    macro event_registry(*event_classes)
+      def self.resolve_class(type : String)
+        case type
+          {% for kls in event_classes %}
+            when "{{kls.id}}"
+              {{kls.id}}
+          {% end %}
+        else
+          raise "No event class found for '#{type}'"
+        end
+      end
+
+      def self.build_event(topic : String, seq : Int64, timestamp : Time, payload_json : String)
+        case topic
+          {% for kls in event_classes %}
+            when "{{kls.id}}"
+              payload = {{kls.id}}::Payload.from_json(payload_json)
+              {{kls.id}}.new(timestamp, seq, payload)
+          {% end %}
+        else
+          raise "No event class found for '#{topic}'"
+        end
+      end
+
+      def self.from_rs(rs : ::DB::ResultSet)
+        events = Array(::Sourced::Event).new
+
+        rs.each do
+          topic = rs.read.as(String)
+          seq = rs.read.as(Int64)
+          timestamp = rs.read.as(Time)
+          payload_json = rs.read.as(JSON::PullParser).read_raw
+
+          events << build_event(topic, seq, timestamp, payload_json)
+        end
+
+        events
+      ensure
+        rs.close
+      end
+    end
+
     # event NameUpdated, name : String
     macro event(class_name, topic, *properties)
       class {{class_name}} < Sourced::Event
