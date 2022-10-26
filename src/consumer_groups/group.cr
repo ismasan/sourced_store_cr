@@ -3,17 +3,21 @@ require "./consumer"
 module SourcedStore
   class ConsumerGroups
     class Group
+      include JSON::Serializable
+
       alias ConsumerHash = Hash(String, Consumer)
 
       property seq : Sourced::Event::Seq = Int64.new(0)
       getter name : String
       getter consumers : ConsumerHash
+      property events_since_snapshot : Int32 = 0
 
       def initialize(@name, @liveness_span : Time::Span)
         @consumers = ConsumerHash.new
       end
 
       def register(id : String, time : Time, debounce : Time::Span = ZERO_DURATION)
+        @events_since_snapshot += 1
         run_at = time + debounce
         cn = if has_consumer?(id)
                consumers[id].copy_with(run_at: run_at)

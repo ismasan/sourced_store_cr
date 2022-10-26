@@ -78,13 +78,49 @@ module CLI
     VOLATILE;
     SQL
 
+    SQL_FN_READ_INTERNAL_STREAM = <<-SQL
+    CREATE OR REPLACE FUNCTION event_store.read_internal_stream(
+      stream_id varchar,
+      after_seq bigint,
+      snapshot_topic varchar
+    )
+    RETURNS SETOF event_store.internal_events
+    AS $$
+    DECLARE
+    	snapshot record;
+    BEGIN
+      SELECT MAX(seq) last_seq
+      	FROM event_store.internal_events e
+      	INTO snapshot
+      	WHERE e.stream_id = read_internal_stream.stream_id
+      	AND e.topic = read_internal_stream.snapshot_topic;
+
+      IF (read_internal_stream.after_seq = 0 AND snapshot.last_seq IS NOT NULL) THEN
+      	RETURN QUERY
+          SELECT e.* FROM event_store.internal_events e
+      		WHERE e.stream_id = read_internal_stream.stream_id
+      		AND e.seq >= snapshot.last_seq
+      		ORDER BY e.seq ASC;
+      ELSE
+      	RETURN QUERY
+          SELECT e.* FROM event_store.internal_events e
+      		WHERE e.stream_id = read_internal_stream.stream_id
+      		AND e.seq > read_internal_stream.after_seq
+      		ORDER BY e.seq ASC;
+      END IF;
+    END;
+    $$ LANGUAGE plpgsql
+    VOLATILE;
+    SQL
+
     # Crystal's DB#exec can only take single commands :(
     SQL_INDICES = [
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_event_ids ON event_store.events (id)),
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_event_seqs ON event_store.events (stream_id, seq)),
       %(CREATE INDEX IF NOT EXISTS index_on_event_categories ON event_store.events (event_store.event_category(topic))),
       %(CREATE UNIQUE INDEX IF NOT EXISTS internal_events_pkey ON event_store.internal_events(id int4_ops)),
-      %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_internal_event_seqs ON event_store.internal_events(stream_id text_ops,seq int8_ops))
+      %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_internal_event_seqs ON event_store.internal_events(stream_id text_ops,seq int8_ops)),
+      %(CREATE INDEX IF NOT EXISTS index_on_internal_event_topics ON event_store.internal_events(topic)),
     ]
 
     SQL_FN_EVENT_CATEGORY = <<-SQL
@@ -107,6 +143,7 @@ module CLI
         pp db.exec(SQL_FN_HASH64)
         pp db.exec(SQL_FN_READ_CATEGORY)
         pp db.exec(SQL_FN_EVENT_CATEGORY)
+        pp db.exec(SQL_FN_READ_INTERNAL_STREAM)
         SQL_INDICES.each do |str|
           db.exec(str)
         end

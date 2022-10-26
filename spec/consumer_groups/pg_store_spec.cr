@@ -56,6 +56,36 @@ describe SourcedStore::ConsumerGroups::PGStore do
       from_seq.map(&.seq).should eq([2, 3])
     end
 
+    it "can read after a given after_seq" do
+      events : Sourced::EventList = [
+        TestApp::NameUpdated.new(seq: 1, new_name: "Frank"),
+        TestApp::AgeUpdated.new(seq: 2, new_age: 34),
+        TestApp::NameUpdated.new(seq: 3, new_name: "Joe"),
+      ]
+
+      store.append_to_stream("g1", events)
+      events = store.read_stream("g1", 1)
+      events.map(&.seq).should eq([2, 3])
+    end
+
+    it "can read from last snapshot if after_seq is 0" do
+      events : Sourced::EventList = [
+        TestApp::NameUpdated.new(seq: 1, new_name: "Frank"),
+        TestApp::AgeUpdated.new(seq: 2, new_age: 34),
+        TestApp::Snapshot.new(seq: 3, name: "Frank", age: 34),
+        TestApp::NameUpdated.new(seq: 4, new_name: "Joe"),
+      ]
+
+      store.append_to_stream("g1", events)
+      # if after_seq is not zero, ignore snapshots
+      events = store.read_stream("g1", 1, TestApp::Snapshot.topic)
+      events.map(&.seq).should eq([2, 3, 4])
+
+      # if after_seq is 0, read from last snapshot, inclusive
+      events = store.read_stream("g1", 0, TestApp::Snapshot.topic)
+      events.map(&.seq).should eq([3, 4])
+    end
+
     it "raises on concurrent write errors" do
       events : Sourced::EventList = [
         TestApp::NameUpdated.new(seq: 1, new_name: "Frank"),

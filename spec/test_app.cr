@@ -12,6 +12,7 @@ module TestApp
   # The things that happen to the entity (events)
   event NameUpdated, "tests.name_updated", new_name : String
   event AgeUpdated, "tests.age_updated", new_age : Int32
+  event Snapshot, "tests.snapshot", name : String, age : Int32
 
   # How events are applied to the entity (projector)
   class UserProjector < Sourced::Projector(User)
@@ -32,7 +33,8 @@ module TestApp
 
     register_events(
       NameUpdated,
-      AgeUpdated
+      AgeUpdated,
+      Snapshot
     )
   end
 end

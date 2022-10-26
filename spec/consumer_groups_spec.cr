@@ -38,6 +38,7 @@ describe SourcedStore::ConsumerGroups do
 
       g2_stream = store.read_stream("g2")
       g2_stream.map(&.seq).should eq([1])
+      groups.groups["g1"].seq.should eq(3)
     end
 
     it "rebalances group to minimum seq" do
@@ -142,6 +143,39 @@ describe SourcedStore::ConsumerGroups do
       cn.position.should eq(0)
       cn.group_size.should eq(1)
       cn.last_seq.should eq(0)
+    end
+
+    it "snapshots groups every X events" do
+      groups = SourcedStore::ConsumerGroups.new(
+        store: store,
+        liveness_span: 10.seconds,
+        logger: logger,
+        snapshot_every: 3
+      )
+
+      now = Time.utc
+      store.append_to_stream(
+        "g1",
+        [
+          checkin_event(
+            now - 15.seconds,
+            1,
+            consumer_id: "c1"
+          ),
+          ack_event(
+            now - 9.seconds,
+            2,
+            consumer_id: "c1",
+            last_seq: 4
+          ),
+        ]
+      )
+
+      groups.checkin("g1", "c2")
+      groups.checkin("g1", "c1", last_seq: Sourced::Event::Seq.new(5))
+      stream = store.read_stream("g1")
+      stream.size.should eq(6)
+      stream[5].should be_a(SourcedStore::ConsumerGroups::Events::GroupSnapshot)
     end
 
     it "optionally sets #run_at to arbitrary date in future, while maintaining rebalancing logic" do

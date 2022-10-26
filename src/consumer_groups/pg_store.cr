@@ -10,10 +10,7 @@ module SourcedStore
                           seq,
                           timestamp,
                           payload
-                          FROM event_store.internal_events
-                          WHERE stream_id = $1
-                          AND seq > $2
-                          ORDER BY id ASC)
+                          FROM event_store.read_internal_stream($1, $2, $3))
 
       INSERT_EVENT_SQL = %(INSERT INTO event_store.internal_events
               (stream_id, topic, seq, timestamp, payload)
@@ -29,9 +26,9 @@ module SourcedStore
         true
       end
 
-      def read_stream(stream_id : String, from_seq : Sourced::Event::Seq | Nil = nil) : Sourced::EventList
-        from_seq ||= Sourced::Event::ZERO_SEQ
-        @registry.from_rs(@db.query(READ_STREAM_SQL, stream_id, from_seq))
+      def read_stream(stream_id : String, after_seq : Sourced::Event::Seq | Nil = nil, snapshot_topic : String = "") : Sourced::EventList
+        after_seq ||= Sourced::Event::ZERO_SEQ
+        @registry.from_rs(@db.query(READ_STREAM_SQL, stream_id, after_seq, snapshot_topic))
       end
 
       def append_to_stream(stream_id : String, events : Sourced::EventList) : Bool

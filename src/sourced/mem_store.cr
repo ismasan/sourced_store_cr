@@ -16,10 +16,11 @@ module Sourced
       true
     end
 
-    def read_stream(stream_id : String, from_seq : Event::Seq | Nil = nil) : EventList
-      from_seq ||= Event::ZERO_SEQ
+    def read_stream(stream_id : String, after_seq : Event::Seq | Nil = nil, snapshot_topic : String = "") : EventList
+      after_seq ||= Event::ZERO_SEQ
       @lock.synchronize do
-        @streams[stream_id].select { |evt| evt.seq > from_seq }
+        events = @streams[stream_id].select { |evt| evt.seq > after_seq }
+        events
       end
     end
 
@@ -36,7 +37,7 @@ module Sourced
     private def guard_concurrent_writes(stream_id : String, events : EventList)
       events.each do |evt|
         key = "#{stream_id}:#{evt.seq}"
-        raise Errors::ConcurrencyError.new("concurrent access on #{key}") if @seqs_index.has_key?(key)
+        raise Errors::ConcurrencyError.new("concurrent write on #{key}") if @seqs_index.has_key?(key)
         @seqs_index[key] = 1
       end
     end

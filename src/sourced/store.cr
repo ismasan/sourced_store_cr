@@ -1,6 +1,6 @@
 module Sourced
   module Store
-    abstract def read_stream(stream_id : String, from_seq : Event::Seq | Nil = nil) : EventList
+    abstract def read_stream(stream_id : String, after_seq : Event::Seq | Nil = nil, snapshot_topic : String = "") : EventList
     abstract def append_to_stream(stream_id : String, events : EventList) : Bool
     abstract def reset! : Bool
 
