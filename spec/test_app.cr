@@ -18,10 +18,12 @@ module TestApp
   class UserProjector < Sourced::Projector(User)
     on NameUpdated do |entity, evt|
       entity.name = evt.payload.new_name
+      entity
     end
 
     on AgeUpdated do |entity, evt|
       entity.age = evt.payload.new_age
+      entity
     end
   end
 

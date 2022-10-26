@@ -41,6 +41,25 @@ describe SourcedStore::ConsumerGroups do
       groups.groups["g1"].seq.should eq(3)
     end
 
+    it "loads group state from snapshot event" do
+      json = %({"group":{"seq":10,"name":"g1","consumers":{"c1":{"id":"c1","registered_at":"2022-10-26T19:27:59Z","group_name":"g1","position":0,"group_size":1,"run_at":"2022-10-26T20:47:52Z","last_seq":343}},"events_since_snapshot":20,"liveness_span":{"seconds":5,"nanoseconds":0}}})
+      payload = SourcedStore::ConsumerGroups::Events::GroupSnapshot::Payload.from_json(json)
+      payload.group.seq.should eq(10)
+      payload.group.name.should eq("g1")
+      payload.group.events_since_snapshot.should eq(20)
+      store.append_to_stream(
+        "g1",
+        SourcedStore::ConsumerGroups::Events::GroupSnapshot.new(Int64.new(10), payload)
+      )
+
+      cn = groups.checkin("g1", "c1")
+      cn.group_size.should eq(1)
+      cn.registered_at.to_s("%Y-%m-%d %H:%M:%S").should eq("2022-10-26 19:27:59")
+      cn.last_seq.should eq(Int64.new(343))
+      group = groups.groups["g1"]
+      group.events_since_snapshot.should eq(0)
+    end
+
     it "rebalances group to minimum seq" do
       now = Time.utc
       store.append_to_stream(
@@ -175,7 +194,7 @@ describe SourcedStore::ConsumerGroups do
       groups.checkin("g1", "c1", last_seq: Sourced::Event::Seq.new(5))
       stream = store.read_stream("g1")
       stream.size.should eq(6)
-      stream[5].should be_a(SourcedStore::ConsumerGroups::Events::GroupSnapshot)
+      stream[3].should be_a(SourcedStore::ConsumerGroups::Events::GroupSnapshot)
     end
 
     it "optionally sets #run_at to arbitrary date in future, while maintaining rebalancing logic" do

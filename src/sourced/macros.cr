@@ -10,7 +10,7 @@ module Sourced
     #   entity.name = evt.payload.name
     # end
     macro on(event_class, &block)
-      def _apply(entity : T, evt : {{event_class}})
+      def _apply(entity : T, evt : {{event_class}}) : T
         {{block.body}}
       end
     end

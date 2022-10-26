@@ -16,8 +16,7 @@ module SourcedStore
         @consumers = ConsumerHash.new
       end
 
-      def register(id : String, time : Time, debounce : Time::Span = ZERO_DURATION)
-        @events_since_snapshot += 1
+      def register(id : String, time : Time, debounce : Time::Span = ZERO_DURATION) : Group
         run_at = time + debounce
         cn = if has_consumer?(id)
                consumers[id].copy_with(run_at: run_at)
@@ -26,14 +25,15 @@ module SourcedStore
              end
         @consumers[id] = cn
         @consumers = update_liveness_window(@consumers, time)
+        self
       end
 
-      def ack(id : String, last_seq : Sourced::Event::Seq, time : Time) : Bool
-        return false unless has_consumer?(id)
+      def ack(id : String, last_seq : Sourced::Event::Seq, time : Time) : Group
+        return self unless has_consumer?(id)
 
         cn = @consumers[id].copy_with(run_at: time, last_seq: last_seq)
         @consumers[id] = cn
-        true
+        self
       end
 
       def has_consumer?(consumer_id : String) : Bool
@@ -66,8 +66,9 @@ module SourcedStore
         consumers.values.any? { |cn| cn.last_seq != seq }
       end
 
-      def rebalance_at(last_seq : Sourced::Event::Seq)
+      def rebalance_at(last_seq : Sourced::Event::Seq) : Group
         @consumers = @consumers.transform_values { |cn| cn.copy_with(last_seq: last_seq) }
+        self
       end
     end
   end
