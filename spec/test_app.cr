@@ -26,4 +26,13 @@ module TestApp
 
   class UserStage < Sourced::Stage(User, UserProjector)
   end
+
+  class Registry
+    include Sourced::EventRegistry
+
+    register_events(
+      NameUpdated,
+      AgeUpdated
+    )
+  end
 end

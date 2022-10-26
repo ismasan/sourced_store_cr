@@ -22,6 +22,10 @@ module Sourced
       self.class.topic
     end
 
+    def payload_json : String
+      "{}"
+    end
+
     class Payload
       include JSON::Serializable
     end

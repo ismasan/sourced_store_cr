@@ -3,6 +3,7 @@ require "db"
 require "pg"
 
 require "./consumer_groups"
+require "./consumer_groups/pg_store"
 require "./twirp_transport/twirp.twirp.cr"
 require "./twirp_transport/twirp.pb.cr"
 
@@ -80,7 +81,8 @@ module SourcedStore
       @db = DB.open(@db_url)
       @liveness_timeout = liveness_timeout
       @consumer_groups = SourcedStore::ConsumerGroups.new(
-        store: Sourced::MemStore.new,
+        # store: Sourced::MemStore.new,
+        store: SourcedStore::ConsumerGroups::PGStore.new(@db, @logger),
         liveness_span: @liveness_timeout.milliseconds,
         logger: @logger
       )
@@ -259,7 +261,6 @@ module SourcedStore
 
       @logger.info "Resetting DB. Careful!"
       @db.exec("TRUNCATE event_store.events RESTART IDENTITY")
-      @db.exec("DELETE FROM event_store.consumers")
       @consumer_groups.reset!
     end
 

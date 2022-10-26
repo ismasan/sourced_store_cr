@@ -1,5 +1,6 @@
 require "./sourced/event"
 require "./sourced/macros"
+require "./sourced/event_registry"
 require "./sourced/projector"
 require "./sourced/errors"
 require "./sourced/store"
