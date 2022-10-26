@@ -57,7 +57,7 @@ describe SourcedStore::ConsumerGroups do
       cn.registered_at.to_s("%Y-%m-%d %H:%M:%S").should eq("2022-10-26 19:27:59")
       cn.last_seq.should eq(Int64.new(343))
       group = groups.groups["g1"]
-      group.events_since_snapshot.should eq(0)
+      group.events_since_snapshot.should eq(1)
     end
 
     it "rebalances group to minimum seq" do
