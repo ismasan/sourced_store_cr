@@ -10,15 +10,23 @@ module SourcedStore
 
     class GroupProjector < Sourced::Projector(Group)
       on Events::ConsumerCheckedIn do |entity, evt|
+        entity.seq = evt.seq
         entity.register(evt.payload.consumer_id, evt.timestamp, evt.payload.debounce)
       end
 
       on Events::ConsumerAcknowledged do |entity, evt|
+        entity.seq = evt.seq
         entity.ack(evt.payload.consumer_id, evt.payload.last_seq, evt.timestamp)
       end
 
       on Events::GroupRebalancedAt do |entity, evt|
+        entity.seq = evt.seq
         entity.rebalance_at(evt.payload.last_seq)
+      end
+
+      on Events::GroupSnapshot do |entity, evt|
+        entity.seq = evt.seq
+        entity.events_since_snapshot = 0
       end
     end
 
@@ -32,7 +40,7 @@ module SourcedStore
     getter groups : Hash(String, Group)
     getter liveness_span : Time::Span
 
-    def initialize(@store : Sourced::Store, @liveness_span : Time::Span, @logger : Logger)
+    def initialize(@store : Sourced::Store, @liveness_span : Time::Span, @logger : Logger, @snapshot_every : Int32 = 100)
       @groups = Hash(String, Group).new { |h, k| h[k] = Group.new(k, @liveness_span) }
     end
 
@@ -57,9 +65,14 @@ module SourcedStore
         stage.apply(Events::GroupRebalancedAt.new(last_seq: min_seq))
       end
 
+      if stage.group.events_since_snapshot >= @snapshot_every
+        logger.info "[#{group_name}] snapshot"
+        stage.apply(Events::GroupSnapshot.new(group: stage.group))
+      end
+
       save(group_name, stage)
       stage.group.consumer_for(consumer_id)
-      # rescue ConcurrencyError # TODO
+    # rescue Sourced::Errors::ConcurrencyError # TODO
       # reload, re-apply, retry?
     end
 
@@ -76,7 +89,14 @@ module SourcedStore
 
     def load(group_name : String) : GroupStage
       group = groups[group_name]
-      GroupStage.new(group_name, group, GroupProjector.new, @store.read_stream(group_name, group.seq))
+
+      GroupStage.new(
+        group_name,
+        group,
+        GroupProjector.new,
+        @store.read_stream(group_name, group.seq, Events::GroupSnapshot.topic),
+        group.seq
+      )
     end
 
     private def ack_consumer(stage : GroupStage, consumer_id : String, last_seq : Sourced::Event::Seq)

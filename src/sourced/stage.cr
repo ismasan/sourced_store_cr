@@ -8,8 +8,7 @@ module Sourced
     getter projector : P
 
     # Load from stream
-    def initialize(stream_id : String, entity : T, projector : P, stream : Sourced::EventList)
-      seq = Int64.new(0)
+    def initialize(stream_id : String, entity : T, projector : P, stream : Sourced::EventList, seq : Sourced::Event::Seq = Int64.new(0))
       stream.each do |evt|
         entity = projector.call(entity, evt)
         seq = evt.seq
