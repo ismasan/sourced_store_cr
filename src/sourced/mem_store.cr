@@ -4,12 +4,14 @@ module Sourced
 
     def initialize
       @streams = Hash(String, EventList).new { |h, k| h[k] = EventList.new }
+      @seqs_index = Hash(String, Int32).new
       @lock = Mutex.new
     end
 
     def reset! : Bool
       @lock.synchronize do
         @streams = @streams.clear
+        @seqs_index = Hash(String, Int32).new
       end
       true
     end
@@ -22,11 +24,21 @@ module Sourced
     end
 
     def append_to_stream(stream_id : String, events : EventList) : Bool
+      guard_concurrent_writes(stream_id, events)
+
       @lock.synchronize do
         @streams[stream_id] += events
       end
 
       true
+    end
+
+    private def guard_concurrent_writes(stream_id : String, events : EventList)
+      events.each do |evt|
+        key = "#{stream_id}:#{evt.seq}"
+        raise Errors::ConcurrencyError.new("concurrent access on #{key}") if @seqs_index.has_key?(key)
+        @seqs_index[key] = 1
+      end
     end
   end
 end
