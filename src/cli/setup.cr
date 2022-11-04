@@ -113,6 +113,27 @@ module CLI
     VOLATILE;
     SQL
 
+    SQL_PROC_COMPACT_STREAMS = <<-SQL
+    CREATE OR REPLACE PROCEDURE event_store.compact_streams (snapshot_topic varchar, snapshots_to_keep integer)
+    LANGUAGE SQL
+    AS $$
+      WITH snapshots AS (
+        SELECT
+          stream_id,
+          topic,
+          seq,
+          rank() OVER (PARTITION BY stream_id ORDER BY seq DESC) AS seq_rank
+        FROM
+          event_store.internal_events
+        WHERE
+          topic = snapshot_topic)
+      DELETE FROM event_store.internal_events e USING snapshots s
+    WHERE s.stream_id = e.stream_id
+      AND s.seq_rank = snapshots_to_keep
+      AND e.seq < s.seq;
+    $$;
+    SQL
+
     # Crystal's DB#exec can only take single commands :(
     SQL_INDICES = [
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_event_ids ON event_store.events (id)),
@@ -144,6 +165,7 @@ module CLI
         pp db.exec(SQL_FN_READ_CATEGORY)
         pp db.exec(SQL_FN_EVENT_CATEGORY)
         pp db.exec(SQL_FN_READ_INTERNAL_STREAM)
+        pp db.exec(SQL_PROC_COMPACT_STREAMS)
         SQL_INDICES.each do |str|
           db.exec(str)
         end

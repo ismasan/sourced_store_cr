@@ -102,4 +102,51 @@ describe SourcedStore::ConsumerGroups::PGStore do
       end
     end
   end
+
+  describe "compact_streams" do
+    it "deletes event before last snapshot, for each stream" do
+      g1_events : Sourced::EventList = [
+        TestApp::NameUpdated.new(seq: 1, new_name: "Frank"),
+        TestApp::AgeUpdated.new(seq: 2, new_age: 34),
+        TestApp::Snapshot.new(seq: 3, name: "Frank", age: 34),
+        TestApp::NameUpdated.new(seq: 4, new_name: "Joe"),
+      ]
+
+      store.append_to_stream("g1", g1_events)
+
+      g2_events : Sourced::EventList = [
+        TestApp::AgeUpdated.new(seq: 2, new_age: 34),
+        TestApp::Snapshot.new(seq: 3, name: "Frank", age: 34),
+        TestApp::NameUpdated.new(seq: 4, new_name: "Joe"),
+        TestApp::AgeUpdated.new(seq: 5, new_age: 44),
+      ]
+
+      store.append_to_stream("g2", g2_events)
+
+      g3_events : Sourced::EventList = [
+        TestApp::AgeUpdated.new(seq: 1, new_age: 34),
+        TestApp::NameUpdated.new(seq: 2, new_name: "Joe"),
+      ]
+
+      store.append_to_stream("g3", g3_events)
+
+      store.compact_streams!(TestApp::Snapshot.topic)
+
+      store.read_stream("g1").tap do |evts|
+        evts.map(&.topic).should eq([TestApp::Snapshot.topic, TestApp::NameUpdated.topic])
+        evts.map(&.seq).should eq([3, 4])
+      end
+
+      store.read_stream("g2").tap do |evts|
+        evts.map(&.topic).should eq([TestApp::Snapshot.topic, TestApp::NameUpdated.topic, TestApp::AgeUpdated.topic])
+        evts.map(&.seq).should eq([3, 4, 5])
+      end
+
+      # g3 has no snapshots. Nothing is deleted.
+      store.read_stream("g3").tap do |evts|
+        evts.map(&.topic).should eq([TestApp::AgeUpdated.topic, TestApp::NameUpdated.topic])
+        evts.map(&.seq).should eq([1, 2])
+      end
+    end
+  end
 end

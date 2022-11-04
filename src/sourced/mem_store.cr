@@ -8,6 +8,11 @@ module Sourced
       @lock = Mutex.new
     end
 
+    def compact_streams!(snapshot_topic : String, snapshots_to_keep : Int32 = 1) : Bool
+      # TODO
+      true
+    end
+
     def reset! : Bool
       @lock.synchronize do
         @streams = @streams.clear
@@ -16,6 +21,7 @@ module Sourced
       true
     end
 
+    # TODO: implement reading from last snapshot
     def read_stream(stream_id : String, after_seq : Event::Seq | Nil = nil, snapshot_topic : String = "") : EventList
       after_seq ||= Event::ZERO_SEQ
       @lock.synchronize do

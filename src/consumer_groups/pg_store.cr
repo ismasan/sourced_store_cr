@@ -17,7 +17,15 @@ module SourcedStore
               values ($1::varchar, $2::varchar, $3, $4::timestamp, $5)
       )
 
+      COMPACT_STREAMS_SQL = %(CALL event_store.compact_streams($1, $2))
+
       def initialize(@db : DB::Database, @logger : Logger, @registry : Sourced::EventRegistry = SourcedStore::ConsumerGroups::Events::Registry.new)
+      end
+
+      def compact_streams!(snapshot_topic : String, snapshots_to_keep : Int32 = 1) : Bool
+        @logger.info "compact all streams with #{snapshots_to_keep} last '#{snapshot_topic}' snapshots"
+        @db.exec(COMPACT_STREAMS_SQL, snapshot_topic, snapshots_to_keep)
+        true
       end
 
       def reset! : Bool
