@@ -61,9 +61,7 @@ module SourcedStore
       min_seq = stage.group.min_seq
       stage.apply(Events::ConsumerCheckedIn.new(consumer_id: consumer_id, debounce: debounce))
 
-      if last_seq
-        ack_consumer(stage, consumer_id, last_seq)
-      end
+      ack_consumer(stage, consumer_id, last_seq) if last_seq
 
       if last_active_count != stage.group.consumers.size && stage.group.any_consumer_not_at?(min_seq) # consumers have been added or removed
         logger.info "[#{group_name}] rebalancing all consumers at #{min_seq}"
@@ -105,8 +103,10 @@ module SourcedStore
     end
 
     private def ack_consumer(stage : GroupStage, consumer_id : String, last_seq : Sourced::Event::Seq)
-      if stage.group.has_consumer?(consumer_id)
-        stage.apply(Events::ConsumerAcknowledged.new(consumer_id: consumer_id, last_seq: last_seq))
+      stage.group.with_consumer(consumer_id) do |cn|
+        if cn.last_seq != last_seq
+          stage.apply(Events::ConsumerAcknowledged.new(consumer_id: consumer_id, last_seq: last_seq))
+        end
       end
     end
 

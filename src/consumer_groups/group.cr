@@ -16,6 +16,12 @@ module SourcedStore
         @consumers = ConsumerHash.new
       end
 
+      def with_consumer(consumer_id : String, &block)
+        return unless has_consumer?(consumer_id)
+
+        yield consumers[consumer_id]
+      end
+
       def register(id : String, time : Time, debounce : Time::Span = ZERO_DURATION) : Group
         run_at = time + debounce
         cn = if has_consumer?(id)
