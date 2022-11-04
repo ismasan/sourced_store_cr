@@ -101,7 +101,7 @@ module SourcedStore
       # relevant to this consumer
       @pollers = Hash(String, Channel(Bool)).new
       @listen_conn = PG.connect_listen(@db_url, channels: [NOTIFY_CHANNEL], blocking: false) do |n|
-        @logger.info "PONG #{n.inspect}"
+        @logger.debug { "PONG #{n.inspect}" }
         @pollers.each_value { |ch| ch.send(true) }
       end
     end
@@ -130,7 +130,7 @@ module SourcedStore
         return TwirpTransport::AppendToStreamResponse.new(successful: true)
       end
 
-      @logger.info "Appending #{events.size} events to stream '#{req.stream_id}'"
+      @logger.debug { "Appending #{events.size} events to stream '#{req.stream_id}'" }
       @db.transaction do |tx|
         conn = tx.connection
         events.each do |evt|
@@ -211,7 +211,7 @@ module SourcedStore
 
       events = read_category_with_consumer(category, consumer, batch_size)
       if !events.any? && !wait_timeout.zero? # blocking poll
-        @logger.info "no events for consumer #{consumer.info}. Blocking."
+        @logger.debug { "no events for consumer #{consumer.info}. Blocking." }
         chan = Channel(Bool).new
         poller_key = [category, consumer.key].join(":")
         @pollers[poller_key] = chan
@@ -227,13 +227,13 @@ module SourcedStore
         @pollers.delete poller_key
       end
 
-      @logger.info "finished #{category} #{consumer.info} got #{events.size} events"
+      @logger.debug { "finished #{category} #{consumer.info} got #{events.size} events" }
       TwirpTransport::ReadCategoryResponse.new(events: events)
     end
 
     def ack_consumer(req : TwirpTransport::AckConsumerRequest) : TwirpTransport::AckConsumerResponse
       if !req.last_seq.is_a?(Int64)
-        @logger.info "ACK last_seq is #{req.last_seq}. Noop"
+        @logger.debug { "ACK last_seq is #{req.last_seq}. Noop" }
         return TwirpTransport::AckConsumerResponse.new(
           successful: false
         )
@@ -250,7 +250,7 @@ module SourcedStore
     end
 
     def ack_consumer(consumer_group : String, consumer_id : String, last_seq : Int64) : Bool
-      @logger.info "ACK #{consumer_group} #{consumer_id} at #{last_seq}"
+      @logger.debug { "ACK #{consumer_group} #{consumer_id} at #{last_seq}" }
       @consumer_groups.ack(consumer_group, consumer_id, last_seq)
 
       true
@@ -261,7 +261,7 @@ module SourcedStore
     end
 
     def stop
-      @logger.info "CLOSING DB"
+      @logger.debug { "CLOSING DB" }
       @listen_conn.close
       @db.close
     end

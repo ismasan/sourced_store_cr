@@ -77,12 +77,12 @@ module SourcedStore
       ack_consumer(stage, consumer_id, last_seq) if last_seq
 
       if last_active_count != stage.group.consumers.size && stage.group.any_consumer_not_at?(min_seq) # consumers have been added or removed
-        logger.info "[#{group_name}] rebalancing all consumers at #{min_seq}"
+        logger.debug { "[#{group_name}] rebalancing all consumers at #{min_seq}" }
         stage.apply(Events::GroupRebalancedAt.new(last_seq: min_seq))
       end
 
       if stage.group.events_since_snapshot >= @snapshot_every
-        logger.info "[#{group_name}] snapshot"
+        logger.debug { "[#{group_name}] snapshot" }
         stage.apply(Events::GroupSnapshot.new(group: stage.group))
       end
 

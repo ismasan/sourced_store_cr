@@ -23,7 +23,7 @@ module SourcedStore
       end
 
       def compact_streams!(snapshot_topic : String, snapshots_to_keep : Int32 = 1) : Bool
-        @logger.info "compact all streams with #{snapshots_to_keep} last '#{snapshot_topic}' snapshots"
+        @logger.debug { "compact all streams with #{snapshots_to_keep} last '#{snapshot_topic}' snapshots" }
         @db.exec(COMPACT_STREAMS_SQL, snapshot_topic, snapshots_to_keep)
         true
       end
@@ -40,7 +40,7 @@ module SourcedStore
       end
 
       def append_to_stream(stream_id : String, events : Sourced::EventList) : Bool
-        @logger.info "Appending #{events.size} events to stream '#{stream_id}'"
+        @logger.debug { "Appending #{events.size} events to stream '#{stream_id}'" }
         @db.transaction do |tx|
           conn = tx.connection
           events.each do |evt|

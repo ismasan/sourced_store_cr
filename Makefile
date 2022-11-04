@@ -2,7 +2,7 @@ setup_db:
 	crystal src/cli.cr setup -d postgres://localhost/sourced_store_development
 
 serve:
-	crystal src/cli.cr serve -d postgres://localhost/sourced_store_development -p 8080 -l 5000
+	crystal src/cli.cr serve -d postgres://localhost/sourced_store_development -p 8080 -l 5000 --log-level debug
 
 twirp:
 	protoc --twirp_crystal_out=src/twirp_transport --crystal_out=src/twirp_transport --plugin=bin/protoc-gen-twirp_crystal --plugin=bin/protoc-gen-crystal ./protos/twirp.proto
