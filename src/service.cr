@@ -83,7 +83,8 @@ module SourcedStore
       @db_url : String,
       @liveness_timeout : Time::Span = DEFAULT_LIVENESS_TIMEOUT,
       compact_every : Time::Span = DEFAULT_COMPACT_INTERVAL,
-      snapshot_every : Int32 = DEFAULT_CONSUMERS_SNAPSHOT_EVERY
+      snapshot_every : Int32 = DEFAULT_CONSUMERS_SNAPSHOT_EVERY,
+      keep_snapshots : Int32 = 1
     )
       @db = DB.open(@db_url)
       @consumer_groups = SourcedStore::ConsumerGroups.new(
@@ -92,7 +93,8 @@ module SourcedStore
         liveness_span: @liveness_timeout,
         logger: @logger,
         snapshot_every: snapshot_every, # snapshot consumer group every X events
-        compact_every: compact_every # compact consumer group streams every Z interval
+        compact_every: compact_every, # compact consumer group streams every Z interval,
+        keep_snapshots: keep_snapshots # keep this many snapshots per stream when compacting.
       )
       # ToDO: here the event should include the hash_64(stream_id)
       # so that this consumer can ignore the trigger and keep waiting for another one
