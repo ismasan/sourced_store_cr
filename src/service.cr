@@ -35,7 +35,7 @@ module SourcedStore
       CONCURRENT_WRITE_LOCK_ERROR = "concurrent_write_lock_error"
     end
 
-    DEFAULT_WAIT_TIMEOUT   = 10000 # 10 seconds
+    DEFAULT_WAIT_TIMEOUT   = 10.seconds # 10 seconds
     DEFAULT_COMPACT_INTERVAL = 30.minutes
     DEFAULT_LIVENESS_TIMEOUT = 5.seconds
     DEFAULT_CONSUMERS_SNAPSHOT_EVERY = 100 # snapshot consumer groups every 100 events
@@ -203,7 +203,7 @@ module SourcedStore
       consumer_group : String = req.consumer_group || "global-group"
       consumer_id : String = req.consumer_id || "global-consumer"
       batch_size : Int32 = req.batch_size || 50
-      wait_timeout : Time::Span = (req.wait_timeout || DEFAULT_WAIT_TIMEOUT).milliseconds
+      wait_timeout : Time::Span = req.wait_timeout ? req.wait_timeout.as(Int32).milliseconds : DEFAULT_WAIT_TIMEOUT
       # Checkin a consumer, making sure to debounce its liveness time period for the duration of the wait timeout.
       consumer = @consumer_groups.checkin(consumer_group, consumer_id, wait_timeout, req.last_seq)
 
