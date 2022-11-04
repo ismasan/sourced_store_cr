@@ -14,7 +14,11 @@ module CLI
 
     def run
       logger = Logger.new(STDOUT, level: Logger::INFO)
-      service = SourcedStore::Service.new(logger: logger, db_url: flags.database, liveness_timeout: flags.liveness_timeout)
+      service = SourcedStore::Service.new(
+        logger: logger,
+        db_url: flags.database,
+        liveness_timeout: flags.liveness_timeout.milliseconds
+      )
 
       Signal::INT.trap do
         service.stop

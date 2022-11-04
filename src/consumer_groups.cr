@@ -45,8 +45,14 @@ module SourcedStore
     getter groups : Hash(String, Group)
     getter liveness_span : Time::Span
 
-    def initialize(@store : Sourced::Store, @liveness_span : Time::Span, @logger : Logger, @snapshot_every : Int32 = 100)
+    def initialize(@store : Sourced::Store, @liveness_span : Time::Span, @logger : Logger, @snapshot_every : Int32 = 100, @compact_every : Time::Span = 30.minutes)
       @groups = Hash(String, Group).new { |h, k| h[k] = Group.new(k, @liveness_span) }
+      spawn do
+        while true
+          @store.compact_streams!(Events::GroupSnapshot.topic, 1)
+          sleep @compact_every
+        end
+      end
     end
 
     def reset!

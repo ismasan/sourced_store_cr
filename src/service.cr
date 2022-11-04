@@ -36,6 +36,9 @@ module SourcedStore
     end
 
     DEFAULT_WAIT_TIMEOUT   = 10000 # 10 seconds
+    DEFAULT_COMPACT_INTERVAL = 30.minutes
+    DEFAULT_LIVENESS_TIMEOUT = 5.seconds
+    DEFAULT_CONSUMERS_SNAPSHOT_EVERY = 100 # snapshot consumer groups every 100 events
     PG_EVENT_SEQ_INDEX_EXP = /unique_index_on_event_seqs/
 
     SELECT_EVENTS_SQL = %(select
@@ -75,16 +78,21 @@ module SourcedStore
     @db : DB::Database
     @listen_conn : PG::ListenConnection
 
-    def initialize(logger : Logger, db_url : String, liveness_timeout : Int32)
-      @logger = logger
-      @db_url = db_url
+    def initialize(
+      @logger : Logger,
+      @db_url : String,
+      @liveness_timeout : Time::Span = DEFAULT_LIVENESS_TIMEOUT,
+      compact_every : Time::Span = DEFAULT_COMPACT_INTERVAL,
+      snapshot_every : Int32 = DEFAULT_CONSUMERS_SNAPSHOT_EVERY
+    )
       @db = DB.open(@db_url)
-      @liveness_timeout = liveness_timeout
       @consumer_groups = SourcedStore::ConsumerGroups.new(
         # store: Sourced::MemStore.new,
         store: SourcedStore::ConsumerGroups::PGStore.new(@db, @logger),
-        liveness_span: @liveness_timeout.milliseconds,
-        logger: @logger
+        liveness_span: @liveness_timeout,
+        logger: @logger,
+        snapshot_every: snapshot_every, # snapshot consumer group every X events
+        compact_every: compact_every # compact consumer group streams every Z interval
       )
       # ToDO: here the event should include the hash_64(stream_id)
       # so that this consumer can ignore the trigger and keep waiting for another one

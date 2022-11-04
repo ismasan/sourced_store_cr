@@ -39,7 +39,7 @@ describe SourcedStore::Service do
     service = SourcedStore::Service.new(
       logger: logger,
       db_url: test_db_url,
-      liveness_timeout: 10
+      liveness_timeout: 10.milliseconds
     )
     service.reset!
   end
