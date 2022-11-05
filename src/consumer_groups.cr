@@ -11,27 +11,22 @@ module SourcedStore
     class GroupProjector < Sourced::Projector(Group)
       on Events::ConsumerCheckedIn do |entity, evt|
         entity.seq = evt.seq
-        entity.events_since_snapshot += 1
         entity.register(evt.payload.consumer_id, evt.timestamp, evt.payload.debounce)
       end
 
       on Events::ConsumerAcknowledged do |entity, evt|
         entity.seq = evt.seq
-        entity.events_since_snapshot += 1
         entity.ack(evt.payload.consumer_id, evt.payload.last_seq, evt.timestamp)
       end
 
       on Events::GroupRebalancedAt do |entity, evt|
         entity.seq = evt.seq
-        entity.events_since_snapshot += 1
         entity.rebalance_at(evt.payload.last_seq)
       end
 
       on Events::GroupSnapshot do |entity, evt|
         # replace entity with snapshot
-        evt.payload.group.tap do |gr|
-          gr.events_since_snapshot = 0
-        end
+        evt.payload.group
       end
     end
 
@@ -81,7 +76,7 @@ module SourcedStore
         stage.apply(Events::GroupRebalancedAt.new(last_seq: min_seq))
       end
 
-      if stage.group.events_since_snapshot >= @snapshot_every
+      if stage.seq % @snapshot_every == 0
         logger.debug { "[#{group_name}] snapshot" }
         stage.apply(Events::GroupSnapshot.new(group: stage.group))
       end

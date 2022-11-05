@@ -10,7 +10,6 @@ module SourcedStore
       property seq : Sourced::Event::Seq = Int64.new(0)
       getter name : String
       getter consumers : ConsumerHash
-      property events_since_snapshot : Int32 = 0
 
       def initialize(@name, @liveness_span : Time::Span)
         @consumers = ConsumerHash.new
