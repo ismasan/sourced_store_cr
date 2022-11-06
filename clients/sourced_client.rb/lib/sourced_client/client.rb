@@ -99,6 +99,7 @@ module SourcedClient
 
     def serialize_events(events)
       events.map(&:to_h).map do |evt|
+        evt[:metadata] = JSON.dump(evt[:metadata]) if evt[:metadata]
         evt[:payload] = JSON.dump(evt[:payload]) if evt[:payload]
         evt[:created_at] = Google::Protobuf::Timestamp.from_time(evt[:created_at]) if evt[:created_at]
         evt
@@ -108,6 +109,9 @@ module SourcedClient
     def deserialize_events(events)
       events.map do |evt|
         e = evt.to_h
+        if e[:metadata]
+          e[:metadata] = JSON.parse(e[:metadata], symbolize_names: true)
+        end
         if e[:payload]
           e[:payload] = JSON.parse(e[:payload], symbolize_names: true)
         end

@@ -14,11 +14,11 @@ message Event {
   string id = 1;
   string topic = 2;
   string stream_id = 3;
-  string originator_id = 4;
   int64 global_seq = 5;
   int32 seq = 6;
   google.protobuf.Timestamp created_at = 7;
-  bytes payload = 8;
+  bytes metadata = 8;
+  bytes payload = 9;
 }
 
 message Error {

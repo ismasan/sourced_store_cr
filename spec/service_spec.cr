@@ -14,17 +14,17 @@ describe SourcedStore::Service do
     build_event(
       topic: "orders.start",
       stream_id: stream_id1,
-      originator_id: nil,
       seq: 1,
       created_at: 1664718079,
+      metadata: nil,
       payload: nil
     ),
     build_event(
       topic: "orders.place",
       stream_id: stream_id1,
-      originator_id: nil,
       seq: 2,
       created_at: 1664718080,
+      metadata: nil,
       payload: nil
     ),
   ] of SourcedStore::TwirpTransport::Event
@@ -77,9 +77,9 @@ describe SourcedStore::Service do
           build_event(
             topic: "orders.close",
             stream_id: stream_id1,
-            originator_id: nil,
             seq: 2,
             created_at: 1664718080,
+            metadata: nil,
             payload: nil
           ),
         ] of SourcedStore::TwirpTransport::Event
@@ -114,9 +114,9 @@ describe SourcedStore::Service do
       order_event3 = build_event(
         topic: "orders.start",
         stream_id: stream_id2,
-        originator_id: nil,
         seq: 1,
         created_at: 1664718011,
+        metadata: nil,
         payload: nil
       )
 
@@ -126,9 +126,9 @@ describe SourcedStore::Service do
         build_event(
           topic: "accounts.open",
           stream_id: "account1",
-          originator_id: nil,
           seq: 1,
           created_at: 1664718011,
+          metadata: nil,
           payload: nil
         ),
       ])
@@ -194,9 +194,9 @@ describe SourcedStore::Service do
         build_event(
           topic: "orders.start",
           stream_id: stream_id1,
-          originator_id: nil,
           seq: 3,
           created_at: 1664718011,
+          metadata: nil,
           payload: nil
         ),
       ])
@@ -204,9 +204,9 @@ describe SourcedStore::Service do
         build_event(
           topic: "orders.start",
           stream_id: stream_id2,
-          originator_id: nil,
           seq: 1,
           created_at: 1664718011,
+          metadata: nil,
           payload: nil
         ),
       ])
@@ -272,9 +272,9 @@ end
 private def build_event(
   topic : String | Nil,
   stream_id : String | Nil,
-  originator_id : String | Nil,
   seq : Int32 | Nil,
   created_at : Int32 | Nil,
+  metadata : Slice(UInt8) | Nil,
   payload : Slice(UInt8) | Nil
 )
   cat : Google::Protobuf::Timestamp | Nil = nil
@@ -284,9 +284,9 @@ private def build_event(
     id: UUID.random.to_s,
     topic: topic,
     stream_id: stream_id,
-    originator_id: originator_id,
     seq: seq,
     created_at: cat,
+    metadata: metadata,
     payload: payload
   )
 end
@@ -295,8 +295,8 @@ private def assert_same_event(e1, e2)
   e1.id.should eq(e2.id)
   e1.topic.should eq(e2.topic)
   e1.stream_id.should eq(e2.stream_id)
-  e1.originator_id.should eq(e2.originator_id)
   e1.seq.should eq(e2.seq)
   e1.created_at.should eq(e2.created_at)
+  e1.metadata.should eq(e2.metadata)
   e1.payload.should eq(e2.payload)
 end

@@ -81,7 +81,7 @@ describe SourcedStore::ConsumerGroups::PGStore do
       events = store.read_stream("g1", 1, TestApp::Snapshot.topic)
       events.map(&.seq).should eq([2, 3, 4])
 
-      # if after_seq is 0, read from last snapshot, inclusive
+      # if after_seq is 0, read from last snapshot, inclusive
       events = store.read_stream("g1", 0, TestApp::Snapshot.topic)
       events.map(&.seq).should eq([3, 4])
     end

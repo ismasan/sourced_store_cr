@@ -83,7 +83,7 @@ module SourcedStore
 
       save(group_name, stage)
       stage.group.consumer_for(consumer_id)
-    # rescue Sourced::Errors::ConcurrencyError # TODO
+      # rescue Sourced::Errors::ConcurrencyError # TODO
       # reload, re-apply, retry?
     end
 
@@ -123,7 +123,7 @@ module SourcedStore
       if stage.uncommitted_events.any?
         @store.append_to_stream(group_name, stage.uncommitted_events)
       end
-      # Make sure to replace local group
+      # Make sure to replace local group
       # ex. when getting new group stage from snapshot event
       @groups[group_name] = stage.group
     end

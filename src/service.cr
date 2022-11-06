@@ -19,11 +19,15 @@ module SourcedStore
     getter id : UUID
     getter topic : String
     getter stream_id : String
-    getter originator_id : UUID | Nil
     getter global_seq : Int64
     getter seq : Int32
     getter created_at : Time
+    getter metadata : JSON::Any | Nil
     getter payload : JSON::Any | Nil
+
+    def metadata_bytes
+      metadata.is_a?(Nil) ? nil : metadata.to_json.to_slice
+    end
 
     def payload_bytes : Bytes | Nil
       payload.is_a?(Nil) ? nil : payload.to_json.to_slice
@@ -35,20 +39,20 @@ module SourcedStore
       CONCURRENT_WRITE_LOCK_ERROR = "concurrent_write_lock_error"
     end
 
-    DEFAULT_WAIT_TIMEOUT   = 10.seconds # 10 seconds
-    DEFAULT_COMPACT_INTERVAL = 30.minutes
-    DEFAULT_LIVENESS_TIMEOUT = 5.seconds
+    DEFAULT_WAIT_TIMEOUT             = 10.seconds # 10 seconds
+    DEFAULT_COMPACT_INTERVAL         = 30.minutes
+    DEFAULT_LIVENESS_TIMEOUT         = 5.seconds
     DEFAULT_CONSUMERS_SNAPSHOT_EVERY = 100 # snapshot consumer groups every 100 events
-    PG_EVENT_SEQ_INDEX_EXP = /unique_index_on_event_seqs/
+    PG_EVENT_SEQ_INDEX_EXP           = /unique_index_on_event_seqs/
 
     SELECT_EVENTS_SQL = %(select
             id,
             topic,
             stream_id,
-            originator_id,
             global_seq,
             seq,
             created_at,
+            metadata,
             payload
             from event_store.events)
 
@@ -57,8 +61,8 @@ module SourcedStore
     READ_STREAM_ORDER_SQL    = %(ORDER BY seq ASC)
 
     INSERT_EVENT_SQL = %(insert into event_store.events
-            (id, topic, stream_id, originator_id, seq, created_at, payload)
-            values ($1::uuid, $2, $3, $4, $5, $6::timestamp, $7)
+            (id, topic, stream_id, seq, created_at, metadata, payload)
+            values ($1::uuid, $2, $3, $4, $5::timestamp, $6, $7)
     )
 
     # $1 category
@@ -93,8 +97,8 @@ module SourcedStore
         liveness_span: @liveness_timeout,
         logger: @logger,
         snapshot_every: snapshot_every, # snapshot consumer group every X events
-        compact_every: compact_every, # compact consumer group streams every Z interval,
-        keep_snapshots: keep_snapshots # keep this many snapshots per stream when compacting.
+        compact_every: compact_every,   # compact consumer group streams every Z interval,
+        keep_snapshots: keep_snapshots  # keep this many snapshots per stream when compacting.
       )
       # ToDO: here the event should include the hash_64(stream_id)
       # so that this consumer can ignore the trigger and keep waiting for another one
@@ -139,9 +143,9 @@ module SourcedStore
             evt.id,
             evt.topic,
             evt.stream_id,
-            evt.originator_id,
             evt.seq,
             protobuf_timestamp_to_time(evt.created_at),
+            evt.metadata,
             evt.payload
           )
         end
@@ -294,17 +298,14 @@ module SourcedStore
 
     private def hydrate_events(rs : ::DB::ResultSet) : EventList
       EventRecord.from_rs(rs).map do |rec|
-        originator_id : String | Nil = rec.originator_id.to_s
-        originator_id = nil if originator_id == ""
-
         TwirpTransport::Event.new(
           id: rec.id.to_s,
           topic: rec.topic,
           stream_id: rec.stream_id,
-          originator_id: originator_id,
           global_seq: rec.global_seq,
           seq: rec.seq,
           created_at: time_to_protobuf_timestamp(rec.created_at),
+          metadata: rec.metadata_bytes,
           payload: rec.payload_bytes
         )
       end

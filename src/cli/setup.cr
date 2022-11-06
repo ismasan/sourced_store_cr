@@ -17,10 +17,10 @@ module CLI
       id uuid DEFAULT uuid_generate_v4(),
       topic varchar NOT NULL,
       stream_id varchar NOT NULL,
-      originator_id uuid,
       global_seq BIGSERIAL NOT NULL,
       seq integer NOT NULL DEFAULT 0,
       created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
+      metadata json,
       payload json,
       CONSTRAINT pk_events_global_seq PRIMARY KEY (global_seq)
     );

@@ -11,11 +11,11 @@ Google::Protobuf::DescriptorPool.generated_pool.build do
       optional :id, :string, 1
       optional :topic, :string, 2
       optional :stream_id, :string, 3
-      optional :originator_id, :string, 4
       optional :global_seq, :int64, 5
       optional :seq, :int32, 6
       optional :created_at, :message, 7, "google.protobuf.Timestamp"
-      optional :payload, :bytes, 8
+      optional :metadata, :bytes, 8
+      optional :payload, :bytes, 9
     end
     add_message "sourced_store.twirp_transport.Error" do
       optional :code, :string, 1
