@@ -139,45 +139,39 @@ module SourcedStore
       )
     end
 
+    # TWIRP
     def read_stream(req : TwirpTransport::ReadStreamRequest) : TwirpTransport::ReadStreamResponse
       events = read_stream(req.stream_id.as(String), req.upto_seq)
 
-      TwirpTransport::ReadStreamResponse.new(events: events)
+      TwirpTransport::ReadStreamResponse.new(events: events.map(&.to_proto))
     end
 
-    def read_stream(stream_id : String, upto_seq : Int32 | Nil = nil) : EventList
+    # BACKEND
+    def read_stream(stream_id : String, upto_seq : Int32 | Nil = nil) : Array(EventRecord)
       sql = [SELECT_EVENTS_SQL, READ_STREAM_WHERE_SQL] of String
 
       if upto_seq
         sql << READ_STREAM_AND_UPTO_SQL
         sql << READ_STREAM_ORDER_SQL
-        hydrate_events(@db.query(sql.join(" "), stream_id, upto_seq))
+        EventRecord.from_rs(@db.query(sql.join(" "), stream_id, upto_seq))
       else
         sql << READ_STREAM_ORDER_SQL
-        hydrate_events(@db.query(sql.join(" "), stream_id))
+        EventRecord.from_rs(@db.query(sql.join(" "), stream_id))
       end
     end
 
-    def read_category(category : String, consumer_group : String, consumer_id : String, last_seq : Int64 | Nil = nil) : EventList
-      resp = read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
-        category: category,
-        consumer_group: consumer_group,
-        consumer_id: consumer_id,
-        wait_timeout: 0,
-        last_seq: last_seq
-      ))
-
-      resp.events.as(EventList)
-    end
-
-    def read_category(req : SourcedStore::TwirpTransport::ReadCategoryRequest) : SourcedStore::TwirpTransport::ReadCategoryResponse
-      category = req.category.as(String)
-      consumer_group : String = req.consumer_group || "global-group"
-      consumer_id : String = req.consumer_id || "global-consumer"
-      batch_size : Int32 = req.batch_size || 50
-      wait_timeout : Time::Span = req.wait_timeout ? req.wait_timeout.as(Int32).milliseconds : DEFAULT_WAIT_TIMEOUT
+    # BACKEND
+    def read_category(
+      category : String,
+      consumer_group : String = "global-group",
+      consumer_id : String = "global-consumer",
+      last_seq : Int64 | Nil = nil,
+      batch_size : Int32 = 50,
+      wait_timeout : Time::Span = DEFAULT_WAIT_TIMEOUT
+    ) : Array(EventRecord)
       # Checkin a consumer, making sure to debounce its liveness time period for the duration of the wait timeout.
-      consumer = @consumer_groups.checkin(consumer_group, consumer_id, wait_timeout, req.last_seq)
+      consumer = @consumer_groups.checkin(consumer_group, consumer_id, wait_timeout, last_seq)
+
 
       events = read_category_with_consumer(category, consumer, batch_size)
       if !events.any? && !wait_timeout.zero? # blocking poll
@@ -198,17 +192,23 @@ module SourcedStore
       end
 
       @logger.debug { "finished #{category} #{consumer.info} got #{events.size} events" }
-      TwirpTransport::ReadCategoryResponse.new(events: events)
+      events
     end
 
-    def ack_consumer(req : TwirpTransport::AckConsumerRequest) : TwirpTransport::AckConsumerResponse
-      if !req.last_seq.is_a?(Int64)
-        @logger.debug { "ACK last_seq is #{req.last_seq}. Noop" }
-        return TwirpTransport::AckConsumerResponse.new(
-          successful: false
-        )
-      end
+    # TWIRP
+    def read_category(req : SourcedStore::TwirpTransport::ReadCategoryRequest) : SourcedStore::TwirpTransport::ReadCategoryResponse
+      category = req.category.as(String)
+      consumer_group : String = req.consumer_group || "global-group"
+      consumer_id : String = req.consumer_id || "global-consumer"
+      batch_size : Int32 = req.batch_size || 50
+      wait_timeout : Time::Span = req.wait_timeout ? req.wait_timeout.as(Int32).milliseconds : DEFAULT_WAIT_TIMEOUT
 
+      events = read_category(category, consumer_group, consumer_id, req.last_seq, batch_size, wait_timeout)
+      TwirpTransport::ReadCategoryResponse.new(events: events.map(&.to_proto))
+    end
+
+    # TWIRP
+    def ack_consumer(req : TwirpTransport::AckConsumerRequest) : TwirpTransport::AckConsumerResponse
       success = ack_consumer(
         consumer_group: req.consumer_group.as(String),
         consumer_id: req.consumer_id.as(String),
@@ -219,7 +219,13 @@ module SourcedStore
       )
     end
 
-    def ack_consumer(consumer_group : String, consumer_id : String, last_seq : Int64) : Bool
+    # BACKEND
+    def ack_consumer(consumer_group : String, consumer_id : String, last_seq : Int64?) : Bool
+      if !last_seq.is_a?(Int64)
+        @logger.debug { "ACK last_seq is #{last_seq}. Noop" }
+        return false
+      end
+
       @logger.debug { "ACK #{consumer_group} #{consumer_id} at #{last_seq}" }
       @consumer_groups.ack(consumer_group, consumer_id, last_seq)
 
@@ -272,7 +278,7 @@ module SourcedStore
       category : String,
       consumer : ConsumerGroups::Consumer,
       batch_size : Int32
-    ) : EventList
+    ) : Array(EventRecord)
       query = @db.query(
         READ_CATEGORY_SQL,
         category,
@@ -281,7 +287,7 @@ module SourcedStore
         consumer.last_seq,
         batch_size
       )
-      hydrate_events(query)
+      EventRecord.from_rs(query)
     end
 
     INSERT_EVENTS_START_SQL = %(INSERT INTO event_store.events (id, topic, stream_id, seq, created_at, metadata, payload) VALUES )

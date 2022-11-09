@@ -155,22 +155,26 @@ describe SourcedStore::Service do
     it "optionally auto-acks consumer to provided last_seq" do
       service.reset!
       service.append_to_stream!(stream_id1, append_req.events.as(SourcedStore::EventList))
-      events = service.read_stream(stream_id1)
+      events = service.read_stream(
+        SourcedStore::TwirpTransport::ReadStreamRequest.new(
+          stream_id: stream_id1
+        )
+      ).events.as(SourcedStore::EventList)
 
       # one request to checkin consumer
-      service.read_category(
+      service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
         consumer_id: "c1"
-      )
+      ))
 
       # Now another one, auto-acking at an event's last global_seq
-      c1_events = service.read_category(
+      c1_events = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
         consumer_id: "c1",
         last_seq: events.first.global_seq
-      )
+      )).events.as(SourcedStore::EventList)
       c1_events.size.should eq(1)
     end
 
@@ -180,20 +184,22 @@ describe SourcedStore::Service do
 
       # Group starts with 1 consumer/partition
       # that returns all events so far
-      c1_events = service.read_category(
+      c1_events = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "c1"
-      )
+        consumer_id: "c1",
+        wait_timeout: 0
+      )).events.as(SourcedStore::EventList)
       c1_events.size.should eq(2)
       service.ack_consumer("sale-report", "c1", c1_events.last.global_seq.as(Int64))
 
       # Group is now up to date, so a new consumer has no new events to fetch
-      c2_events = service.read_category(
+      c2_events = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
-        consumer_id: "c2"
-      )
+        consumer_id: "c2",
+        wait_timeout: 0
+      )).events.as(SourcedStore::EventList)
 
       c2_events.size.should eq(0)
 
@@ -219,21 +225,21 @@ describe SourcedStore::Service do
         ),
       ])
 
-      c1_events = service.read_category(
+      c1_events = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
         consumer_id: "c1"
-      )
+      )).events.as(SourcedStore::EventList)
       service.ack_consumer("sale-report", "c1", c1_events.last.global_seq.as(Int64))
 
       c1_events.size.should eq(1)
       c1_events.map(&.stream_id).should eq([stream_id1])
 
-      c2_events = service.read_category(
+      c2_events = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
         category: "orders",
         consumer_group: "sale-report",
         consumer_id: "c2"
-      )
+      )).events.as(SourcedStore::EventList)
       c2_events.size.should eq(1)
       c2_events.map(&.stream_id).should eq([stream_id2])
     end
