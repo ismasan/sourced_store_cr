@@ -265,22 +265,7 @@ module SourcedStore
     end
 
     private def hydrate_events(rs : ::DB::ResultSet) : EventList
-      EventRecord.from_rs(rs).map do |rec|
-        TwirpTransport::Event.new(
-          id: rec.id.to_s,
-          topic: rec.topic,
-          stream_id: rec.stream_id,
-          global_seq: rec.global_seq,
-          seq: rec.seq,
-          created_at: time_to_protobuf_timestamp(rec.created_at),
-          metadata: rec.metadata_bytes,
-          payload: rec.payload_bytes
-        )
-      end
-    end
-
-    private def category_name(topic : String) : String
-      topic.split(".").first
+      EventRecord.from_rs(rs).map(&.to_proto)
     end
 
     private def read_category_with_consumer(
