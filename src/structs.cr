@@ -1,6 +1,24 @@
+require "db"
 require "./twirp_transport/twirp.pb.cr"
 
 module SourcedStore
+  class JSONToBytes
+    def self.from_rs(rs : DB::ResultSet) : Bytes?
+      cnt = rs.read
+      case cnt
+      when JSON::PullParser
+        any = JSON::Any.new(pull: cnt)
+        any.to_json.to_slice
+      when JSON::Any
+        cnt.to_json.to_slice
+      when Nil
+        nil
+      else
+        raise cnt.inspect
+      end
+    end
+  end
+
   struct EventRecord
     include DB::Serializable
     getter id : UUID
@@ -9,7 +27,10 @@ module SourcedStore
     getter global_seq : Int64
     getter seq : Int32
     getter created_at : Time
+    # Converters must be fully qualified modules
+    @[DB::Field(key: "metadata", converter: SourcedStore::JSONToBytes)]
     getter metadata : Bytes | Nil
+    @[DB::Field(key: "payload", converter: SourcedStore::JSONToBytes)]
     getter payload : Bytes | Nil
 
     def self.from_proto(evt : TwirpTransport::Event) : EventRecord
