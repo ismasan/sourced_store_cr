@@ -112,7 +112,7 @@ describe SourcedStore::Service do
       service.append_to_stream(req: append_req)
 
       order_event3 = build_event(
-        topic: "orders.start",
+        topic: "orders.commands.start",
         stream_id: stream_id2,
         seq: 1,
         created_at: 1664718011,
@@ -142,6 +142,14 @@ describe SourcedStore::Service do
       assert_same_event(events[0], sent_events[0])
       assert_same_event(events[1], sent_events[1])
       assert_same_event(events[2], order_event3)
+
+      # It ANDs categories together
+      resp = service.read_category(SourcedStore::TwirpTransport::ReadCategoryRequest.new(
+        category: "orders.commands"
+      ))
+      events = resp.events.as(SourcedStore::EventList)
+      events.size.should eq(1)
+      events.map(&.stream_id).should eq([stream_id2])
     end
 
     it "optionally auto-acks consumer to provided last_seq" do

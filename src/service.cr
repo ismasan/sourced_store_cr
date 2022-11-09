@@ -128,6 +128,12 @@ module SourcedStore
       ))
     end
 
+    struct Category
+      include DB::Serializable
+      getter id : UUID
+      getter name : String
+    end
+
     def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse
       events = req.events.as(EventList)
       if !events.any?
@@ -149,6 +155,53 @@ module SourcedStore
             evt.payload
           )
         end
+
+        #++++++++++++++++++++++++
+        cats_to_events = events.each.with_object(Hash(String, Array(String)).new) do |evt, ret|
+          evt.topic.as(String).split(".").each do |cat|
+            ret[cat] ||= Array(String).new
+            ret[cat] << evt.id.as(String)
+          end
+        end
+        all_cats = cats_to_events.keys
+
+        # Create categories
+        categories_sql = String.build do |str|
+          str << "WITH cats AS(INSERT INTO event_store.categories (name) VALUES "
+          str << (1..all_cats.size).map { |pos| "($#{pos})" }.join(", ")
+          str << " ON CONFLICT(name) DO NOTHING RETURNING id, name"
+          str << ") SELECT * FROM cats UNION SELECT id, name FROM event_store.categories WHERE name IN ("
+          str << (1..all_cats.size).map { |pos| "$#{pos}" }.join(", ")
+          str << ");"
+        end
+
+        category_events = Array(Array(String | UUID)).new
+
+        conn.query(categories_sql, args: all_cats) do |rs|
+          Category.from_rs(rs).each.with_index do |cat, idx|
+            cats_to_events[cat.name].each do |event_id|
+              category_events << [cat.id.as(UUID), event_id.as(String)]
+            end
+          end
+        end
+
+        # Create categories_to_events
+        category_event_sql = String.build do |str|
+          str << "INSERT INTO event_store.categories_to_events (category_id, event_id) VALUES "
+          count = 0
+          str << category_events.map do |(cat_id, event_id)|
+            String.build do |f|
+              count += 1
+              f << "($#{count}, "
+              count += 1
+              f << "$#{count})"
+            end
+          end.join(", ")
+        end
+        p category_event_sql
+        p conn.exec(category_event_sql, args: category_events.flatten)
+
+        #++++++++++++++++++++++++
 
         # ToDO: include hash_64(stream_id) in notification payload
         # so that listening consumers can ignore notifications that don't concern them
@@ -274,7 +327,9 @@ module SourcedStore
       return unless ENV["ENV"] == "test"
 
       @logger.info "Resetting DB. Careful!"
-      @db.exec("TRUNCATE event_store.events RESTART IDENTITY")
+      @db.exec("DELETE FROM event_store.categories")
+      @db.exec("DELETE FROM event_store.categories_to_events")
+      @db.exec("DELETE FROM event_store.events")
       @consumer_groups.reset!
     end
 

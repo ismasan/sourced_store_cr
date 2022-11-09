@@ -26,6 +26,22 @@ module CLI
     );
     SQL
 
+    SQL_CREATE_CATEGORIES_TABLE_SQL = <<-SQL
+    CREATE TABLE IF NOT EXISTS event_store.categories (
+        id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+        name character varying NOT NULL UNIQUE,
+        created_at timestamp without time zone DEFAULT timezone('utc'::text, now())
+    );
+    SQL
+
+    SQL_CREATE_CATEGORIES_TO_EVENTS_TABLE_SQL = <<-SQL
+    CREATE TABLE IF NOT EXISTS event_store.categories_to_events (
+        category_id uuid REFERENCES event_store.categories(id) ON DELETE CASCADE,
+        event_id uuid REFERENCES event_store.events(id) ON DELETE CASCADE,
+        created_at timestamp without time zone DEFAULT timezone('utc'::text, now())
+    );
+    SQL
+
     SQL_CREATE_INTERNAL_EVENTS_TABLE = <<-SQL
     CREATE TABLE IF NOT EXISTS event_store.internal_events (
       id SERIAL PRIMARY KEY,
@@ -64,15 +80,25 @@ module CLI
     RETURNS SETOF event_store.events
     AS $$
     DECLARE
+    	categories text[];
+    	categories_size int;
     BEGIN
+    	categories := string_to_array(read_category.category, '.');
+    	categories_size := array_length(categories, 1);
+
       RETURN QUERY
-        SELECT event_store.events.*
-        FROM event_store.events
-        WHERE event_store.event_category(topic) = read_category.category
-              AND MOD(event_store.hash_64(stream_id::varchar), read_category.group_size) = read_category.consumer_position
-              AND global_seq > read_category.after_seq
-              ORDER BY global_seq ASC
-              LIMIT read_category.batch_size;
+        SELECT
+        	e.*
+        FROM event_store.events e
+        	LEFT JOIN event_store.categories_to_events ce ON ce.event_id = e.id
+			    LEFT JOIN event_store.categories cats ON cats.id = ce.category_id
+     	  WHERE cats.name = ANY (categories)
+          AND MOD(event_store.hash_64(e.stream_id::varchar), read_category.group_size) = read_category.consumer_position
+          AND e.global_seq > read_category.after_seq
+        GROUP BY e.global_seq
+		    HAVING count(*) = categories_size
+        ORDER BY e.global_seq ASC
+        LIMIT read_category.batch_size;
     END;
     $$ LANGUAGE plpgsql
     VOLATILE;
@@ -142,6 +168,8 @@ module CLI
       %(CREATE UNIQUE INDEX IF NOT EXISTS internal_events_pkey ON event_store.internal_events(id int4_ops)),
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_internal_event_seqs ON event_store.internal_events(stream_id text_ops,seq int8_ops)),
       %(CREATE INDEX IF NOT EXISTS index_on_internal_event_topics ON event_store.internal_events(topic)),
+      %(CREATE UNIQUE INDEX IF NOT EXISTS categories_pkey ON event_store.categories(id uuid_ops)),
+      %(CREATE UNIQUE INDEX IF NOT EXISTS categories_name_key ON event_store.categories(name text_ops)),
     ]
 
     SQL_FN_EVENT_CATEGORY = <<-SQL
@@ -161,6 +189,8 @@ module CLI
         pp db.exec(SQL_EXTENSIONS)
         pp db.exec(SQL_CREATE_EVENTS_TABLE)
         pp db.exec(SQL_CREATE_INTERNAL_EVENTS_TABLE)
+        pp db.exec(SQL_CREATE_CATEGORIES_TABLE_SQL)
+        pp db.exec(SQL_CREATE_CATEGORIES_TO_EVENTS_TABLE_SQL)
         pp db.exec(SQL_FN_HASH64)
         pp db.exec(SQL_FN_READ_CATEGORY)
         pp db.exec(SQL_FN_EVENT_CATEGORY)
