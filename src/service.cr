@@ -2,6 +2,7 @@ require "twirp"
 require "db"
 require "pg"
 
+require "./structs"
 require "./consumer_groups"
 require "./consumer_groups/pg_store"
 require "./twirp_transport/twirp.twirp.cr"
@@ -13,32 +14,6 @@ require "./twirp_transport/twirp.pb.cr"
 # Advisory lock around consumer, so no duped consumers can consume or ACK at the same time
 module SourcedStore
   alias EventList = Array(TwirpTransport::Event)
-
-  struct EventRecord
-    include DB::Serializable
-    getter id : UUID
-    getter topic : String
-    getter stream_id : String
-    getter global_seq : Int64
-    getter seq : Int32
-    getter created_at : Time
-    getter metadata : JSON::Any | Nil
-    getter payload : JSON::Any | Nil
-
-    def metadata_bytes
-      metadata.is_a?(Nil) ? nil : metadata.to_json.to_slice
-    end
-
-    def payload_bytes : Bytes | Nil
-      payload.is_a?(Nil) ? nil : payload.to_json.to_slice
-    end
-  end
-
-  struct Category
-    include DB::Serializable
-    getter id : UUID
-    getter name : String
-  end
 
   class Service < SourcedStore::TwirpTransport::EventStore
     module ErrorCodes
@@ -129,92 +104,6 @@ module SourcedStore
       ))
     end
 
-    INSERT_EVENTS_START_SQL = %(INSERT INTO event_store.events (id, topic, stream_id, seq, created_at, metadata, payload) VALUES )
-
-    private def db_insert_events(conn, events)
-      events_sql = String.build do |str|
-        str << INSERT_EVENTS_START_SQL
-        count = 0
-        str << events.map do |evt|
-          String.build do |f|
-            count += 1
-            f << "($#{count}::uuid, "
-            count += 1
-            f << "$#{count}, " # topic
-            count += 1
-            f << "$#{count}, " # stream_id
-            count += 1
-            f << "$#{count}, " # seq
-            count += 1
-            f << "$#{count}::timestamp, " # created_at
-            count += 1
-            f << "$#{count}, " # metadata
-            count += 1
-            f << "$#{count})" # payload
-          end
-        end.join(", ")
-      end
-
-      event_rows = events.flat_map do |evt|
-        [
-          evt.id,
-          evt.topic,
-          evt.stream_id,
-          evt.seq,
-          protobuf_timestamp_to_time(evt.created_at),
-          evt.metadata,
-          evt.payload
-        ]
-      end
-
-      conn.exec(events_sql, args: event_rows)
-    end
-
-    private def db_categorize_events(conn, events)
-      cats_to_events = events.each.with_object(Hash(String, Array(String)).new) do |evt, ret|
-        evt.topic.as(String).split(".").each do |cat|
-          ret[cat] ||= Array(String).new
-          ret[cat] << evt.id.as(String)
-        end
-      end
-      all_cats = cats_to_events.keys
-
-      # Upsert categories
-      categories_sql = String.build do |str|
-        str << "WITH cats AS(INSERT INTO event_store.categories (name) VALUES "
-        str << (1..all_cats.size).map { |pos| "($#{pos})" }.join(", ")
-        str << " ON CONFLICT(name) DO NOTHING RETURNING id, name"
-        str << ") SELECT * FROM cats UNION SELECT id, name FROM event_store.categories WHERE name IN ("
-        str << (1..all_cats.size).map { |pos| "$#{pos}" }.join(", ")
-        str << ");"
-      end
-
-      category_events = Array(Array(String | UUID)).new
-
-      conn.query(categories_sql, args: all_cats) do |rs|
-        Category.from_rs(rs).each.with_index do |cat, idx|
-          cats_to_events[cat.name].each do |event_id|
-            category_events << [cat.id.as(UUID), event_id.as(String)]
-          end
-        end
-      end
-
-      # Create categories_to_events
-      category_event_sql = String.build do |str|
-        str << "INSERT INTO event_store.categories_to_events (category_id, event_id) VALUES "
-        count = 0
-        str << category_events.map do |(cat_id, event_id)|
-          String.build do |f|
-            count += 1
-            f << "($#{count}, "
-            count += 1
-            f << "$#{count})"
-          end
-        end.join(", ")
-      end
-      conn.exec(category_event_sql, args: category_events.flatten)
-    end
-
     def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse
       events = req.events.as(EventList)
       if !events.any?
@@ -226,9 +115,6 @@ module SourcedStore
         conn = tx.connection
         db_insert_events(conn, events)
         db_categorize_events(conn, events)
-
-
-        #++++++++++++++++++++++++
 
         # ToDO: include hash_64(stream_id) in notification payload
         # so that listening consumers can ignore notifications that don't concern them
@@ -412,5 +298,92 @@ module SourcedStore
       )
       hydrate_events(query)
     end
+
+    INSERT_EVENTS_START_SQL = %(INSERT INTO event_store.events (id, topic, stream_id, seq, created_at, metadata, payload) VALUES )
+
+    private def db_insert_events(conn, events)
+      events_sql = String.build do |str|
+        str << INSERT_EVENTS_START_SQL
+        count = 0
+        str << events.map do |evt|
+          String.build do |f|
+            count += 1
+            f << "($#{count}::uuid, "
+            count += 1
+            f << "$#{count}, " # topic
+            count += 1
+            f << "$#{count}, " # stream_id
+            count += 1
+            f << "$#{count}, " # seq
+            count += 1
+            f << "$#{count}::timestamp, " # created_at
+            count += 1
+            f << "$#{count}, " # metadata
+            count += 1
+            f << "$#{count})" # payload
+          end
+        end.join(", ")
+      end
+
+      event_rows = events.flat_map do |evt|
+        [
+          evt.id,
+          evt.topic,
+          evt.stream_id,
+          evt.seq,
+          protobuf_timestamp_to_time(evt.created_at),
+          evt.metadata,
+          evt.payload
+        ]
+      end
+
+      conn.exec(events_sql, args: event_rows)
+    end
+
+    private def db_categorize_events(conn, events)
+      cats_to_events = events.each.with_object(Hash(String, Array(String)).new) do |evt, ret|
+        evt.topic.as(String).split(".").each do |cat|
+          ret[cat] ||= Array(String).new
+          ret[cat] << evt.id.as(String)
+        end
+      end
+      all_cats = cats_to_events.keys
+
+      # Upsert categories
+      categories_sql = String.build do |str|
+        str << "WITH cats AS(INSERT INTO event_store.categories (name) VALUES "
+        str << (1..all_cats.size).map { |pos| "($#{pos})" }.join(", ")
+        str << " ON CONFLICT(name) DO NOTHING RETURNING id, name"
+        str << ") SELECT * FROM cats UNION SELECT id, name FROM event_store.categories WHERE name IN ("
+        str << (1..all_cats.size).map { |pos| "$#{pos}" }.join(", ")
+        str << ");"
+      end
+
+      category_events = Array(Array(String | UUID)).new
+
+      conn.query(categories_sql, args: all_cats) do |rs|
+        Category.from_rs(rs).each.with_index do |cat, idx|
+          cats_to_events[cat.name].each do |event_id|
+            category_events << [cat.id.as(UUID), event_id.as(String)]
+          end
+        end
+      end
+
+      # Create categories_to_events
+      category_event_sql = String.build do |str|
+        str << "INSERT INTO event_store.categories_to_events (category_id, event_id) VALUES "
+        count = 0
+        str << category_events.map do |(cat_id, event_id)|
+          String.build do |f|
+            count += 1
+            f << "($#{count}, "
+            count += 1
+            f << "$#{count})"
+          end
+        end.join(", ")
+      end
+      conn.exec(category_event_sql, args: category_events.flatten)
+    end
+
   end
 end
