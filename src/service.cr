@@ -1,18 +1,15 @@
 require "twirp"
 
+require "./backend_interface"
 require "./pg_backend"
 require "./twirp_transport/twirp.twirp.cr"
 require "./twirp_transport/twirp.pb.cr"
 
-# TODO:
-# global fiber listening to PG Notify events
-# auto-rebalance consumers after liveness interval
-# Advisory lock around consumer, so no duped consumers can consume or ACK at the same time
 module SourcedStore
   alias EventList = Array(TwirpTransport::Event)
 
   class Service < SourcedStore::TwirpTransport::EventStore
-    def initialize(@backend : PGBackend)
+    def initialize(@backend : BackendInterface)
 
     end
 
@@ -34,7 +31,7 @@ module SourcedStore
       )
 
       if result.error
-        err = result.error.as(PGBackend::Error)
+        err = result.error.as(SourcedStore::Error)
         TwirpTransport::AppendToStreamResponse.new(
           successful: false,
           error: TwirpTransport::Error.new(

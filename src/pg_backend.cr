@@ -1,6 +1,7 @@
 require "db"
 require "pg"
 
+require "./backend_interface"
 require "./structs"
 require "./consumer_groups"
 require "./consumer_groups/pg_store"
@@ -11,6 +12,8 @@ require "./consumer_groups/pg_store"
 # Advisory lock around consumer, so no duped consumers can consume or ACK at the same time
 module SourcedStore
   class PGBackend
+    include BackendInterface
+
     module ErrorCodes
       CONCURRENT_WRITE_LOCK_ERROR = "concurrent_write_lock_error"
     end
@@ -81,20 +84,9 @@ module SourcedStore
       end
     end
 
-    def info
+    def info : String
       %(db: #{@db_url} liveness timeout: #{@liveness_timeout})
     end
-
-    # Backend
-    def append_to_stream!(stream_id : String, events : Array(EventRecord)) : ResultWithError
-      result = append_to_stream(stream_id, events)
-      raise "Could not append: #{result.error.inspect}" unless result.successful
-
-      result
-    end
-
-    record Error, code : String, message : String?
-    record ResultWithError, successful : Bool, error : Error?
 
     def append_to_stream(stream_id : String, events : Array(EventRecord)) : ResultWithError
       if !events.any?
@@ -182,10 +174,6 @@ module SourcedStore
       @consumer_groups.ack(consumer_group, consumer_id, last_seq)
 
       true
-    end
-
-    def ack_consumer(consumer : ConsumerGroups::Consumer, last_seq : Int64) : Bool
-      ack_consumer(consumer_group: consumer.group_name, consumer_id: consumer.id, last_seq: last_seq)
     end
 
     def stop

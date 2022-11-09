@@ -74,4 +74,7 @@ module SourcedStore
     getter id : UUID
     getter name : String
   end
+
+  record Error, code : String, message : String?
+  record ResultWithError, successful : Bool, error : Error?
 end
