@@ -27,7 +27,7 @@ module CLI
                   end
 
       logger = Logger.new(STDOUT, level: log_level)
-      service = SourcedStore::Service.new(
+      backend = SourcedStore::PGBackend.new(
         logger: logger,
         db_url: flags.database,
         liveness_timeout: flags.liveness_timeout.milliseconds,
@@ -35,6 +35,7 @@ module CLI
         snapshot_every: flags.snapshot_every,
         keep_snapshots: flags.keep_snapshots
       )
+      service = SourcedStore::Service.new(backend)
 
       Signal::INT.trap do
         service.stop

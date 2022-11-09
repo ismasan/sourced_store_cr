@@ -36,11 +36,12 @@ describe SourcedStore::Service do
 
   before_all do
     CLI::Setup.run(["--database=#{test_db_url}"])
-    service = SourcedStore::Service.new(
+    backend = SourcedStore::PGBackend.new(
       logger: logger,
       db_url: test_db_url,
       liveness_timeout: 10.milliseconds
     )
+    service = SourcedStore::Service.new(backend)
     service.reset!
   end
 
