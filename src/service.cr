@@ -90,27 +90,30 @@ module SourcedStore
       %(db: #{@db_url} liveness timeout: #{@liveness_timeout})
     end
 
-    def append_to_stream!(stream_id : String, events : EventList) : TwirpTransport::AppendToStreamResponse
+    # Twirp
+    def append_to_stream!(stream_id : String, events : EventList) : Bool
+      result = append_to_stream!(stream_id, events.as(EventList).map { |e| EventRecord.from_proto(e)})
+      result.successful
+    end
+
+    # Backend
+    def append_to_stream!(stream_id : String, events : Array(EventRecord)) : ResultWithError
       result = append_to_stream(stream_id, events)
       raise "Could not append: #{result.error.inspect}" unless result.successful
 
       result
     end
 
-    def append_to_stream(stream_id : String, events : EventList) : TwirpTransport::AppendToStreamResponse
-      append_to_stream(TwirpTransport::AppendToStreamRequest.new(
-        stream_id: stream_id,
-        events: events
-      ))
-    end
+    record Error, code : String, message : String?
+    record ResultWithError, successful : Bool, error : Error?
 
-    def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse
-      events = req.events.as(EventList)
+    # BACKEND
+    def append_to_stream(stream_id : String, events : Array(EventRecord)) : ResultWithError
       if !events.any?
-        return TwirpTransport::AppendToStreamResponse.new(successful: true)
+        return ResultWithError.new(successful: true, error: nil)
       end
 
-      @logger.debug { "Appending #{events.size} events to stream '#{req.stream_id}'" }
+      @logger.debug { "Appending #{events.size} events to stream '#{stream_id}'" }
       @db.transaction do |tx|
         conn = tx.connection
         db_insert_events(conn, events)
@@ -121,7 +124,7 @@ module SourcedStore
         conn.exec("SELECT pg_notify($1, $2)", NOTIFY_CHANNEL, events.first.id)
       end
 
-      TwirpTransport::AppendToStreamResponse.new(successful: true)
+      ResultWithError.new(successful: true, error: nil)
     rescue err
       @logger.error err.inspect
       err_code = case err.message
@@ -130,13 +133,30 @@ module SourcedStore
                  else
                    "error"
                  end
-      TwirpTransport::AppendToStreamResponse.new(
-        successful: false,
-        error: TwirpTransport::Error.new(
-          code: err_code,
-          message: err.message
-        )
+      ResultWithError.new(successful: false, error: Error.new(code: err_code, message: err.message))
+    end
+
+    # TWIRP
+    def append_to_stream(req : TwirpTransport::AppendToStreamRequest) : TwirpTransport::AppendToStreamResponse
+      events = req.events.as(EventList).map { |evt| EventRecord.from_proto(evt) }
+
+      result = append_to_stream(
+        stream_id: req.stream_id.as(String),
+        events: events
       )
+
+      if result.error
+        err = result.error.as(Error)
+        TwirpTransport::AppendToStreamResponse.new(
+          successful: false,
+          error: TwirpTransport::Error.new(
+            code: err.code,
+            message: err.message
+          )
+        )
+      else
+        TwirpTransport::AppendToStreamResponse.new(successful: true)
+      end
     end
 
     # TWIRP
@@ -261,15 +281,6 @@ module SourcedStore
       )
     end
 
-    private def protobuf_timestamp_to_time(pbtime : Google::Protobuf::Timestamp | Nil) : Time
-      pbtime = pbtime.as(Google::Protobuf::Timestamp)
-      span = Time::Span.new(
-        seconds: pbtime.seconds.as(Int64),
-        nanoseconds: pbtime.nanos.as(Int32)
-      )
-      Time::UNIX_EPOCH + span
-    end
-
     private def hydrate_events(rs : ::DB::ResultSet) : EventList
       EventRecord.from_rs(rs).map(&.to_proto)
     end
@@ -322,7 +333,7 @@ module SourcedStore
           evt.topic,
           evt.stream_id,
           evt.seq,
-          protobuf_timestamp_to_time(evt.created_at),
+          evt.created_at,
           evt.metadata,
           evt.payload
         ]
@@ -332,10 +343,10 @@ module SourcedStore
     end
 
     private def db_categorize_events(conn, events)
-      cats_to_events = events.each.with_object(Hash(String, Array(String)).new) do |evt, ret|
+      cats_to_events = events.each.with_object(Hash(String, Array(UUID)).new) do |evt, ret|
         evt.topic.as(String).split(".").each do |cat|
-          ret[cat] ||= Array(String).new
-          ret[cat] << evt.id.as(String)
+          ret[cat] ||= Array(UUID).new
+          ret[cat] << evt.id
         end
       end
       all_cats = cats_to_events.keys
@@ -350,12 +361,12 @@ module SourcedStore
         str << ");"
       end
 
-      category_events = Array(Array(String | UUID)).new
+      category_events = Array(Array(UUID)).new
 
       conn.query(categories_sql, args: all_cats) do |rs|
         Category.from_rs(rs).each.with_index do |cat, idx|
           cats_to_events[cat.name].each do |event_id|
-            category_events << [cat.id.as(UUID), event_id.as(String)]
+            category_events << [cat.id.as(UUID), event_id]
           end
         end
       end

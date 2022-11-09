@@ -9,10 +9,36 @@ module SourcedStore
     getter global_seq : Int64
     getter seq : Int32
     getter created_at : Time
-    getter metadata : JSON::Any | Nil
-    getter payload : JSON::Any | Nil
+    getter metadata : Bytes | Nil
+    getter payload : Bytes | Nil
 
-    def metadata_bytes
+    def self.from_proto(evt : TwirpTransport::Event) : EventRecord
+      EventRecord.new(
+        id: UUID.new(evt.id.as(String)),
+        topic: evt.topic.as(String),
+        stream_id: evt.stream_id.as(String),
+        global_seq: Int64.new(0),
+        seq: evt.seq.as(Int32),
+        created_at: protobuf_timestamp_to_time(evt.created_at),
+        metadata: evt.metadata,
+        payload: evt.payload
+      )
+    end
+
+    def self.protobuf_timestamp_to_time(pbtime : Google::Protobuf::Timestamp | Nil) : Time
+      pbtime = pbtime.as(Google::Protobuf::Timestamp)
+      span = Time::Span.new(
+        seconds: pbtime.seconds.as(Int64),
+        nanoseconds: pbtime.nanos.as(Int32)
+      )
+      Time::UNIX_EPOCH + span
+    end
+
+    def initialize(@id, @topic, @stream_id, @global_seq, @seq, @created_at, @metadata, @payload)
+
+    end
+
+    def metadata_bytes : Bytes | Nil
       metadata.is_a?(Nil) ? nil : metadata.to_json.to_slice
     end
 
@@ -28,8 +54,8 @@ module SourcedStore
         global_seq: global_seq,
         seq: seq,
         created_at: time_to_protobuf_timestamp(created_at),
-        metadata: metadata_bytes,
-        payload: payload_bytes
+        metadata: metadata,
+        payload: payload
       )
     end
 
