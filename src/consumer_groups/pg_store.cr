@@ -12,11 +12,7 @@ module SourcedStore
                           payload
                           FROM event_store.read_internal_stream($1, $2, $3))
 
-      INSERT_EVENT_SQL = %(INSERT INTO event_store.internal_events
-              (stream_id, topic, seq, timestamp, payload)
-              values ($1::varchar, $2::varchar, $3, $4::timestamp, $5)
-      )
-
+      INSERT_EVENTS_SQL = %(INSERT INTO event_store.internal_events (stream_id, topic, seq, timestamp, payload) VALUES )
       COMPACT_STREAMS_SQL = %(CALL event_store.compact_streams($1, $2))
 
       def initialize(@db : DB::Database, @logger : Logger, @registry : Sourced::EventRegistry = SourcedStore::ConsumerGroups::Events::Registry.new)
@@ -41,18 +37,30 @@ module SourcedStore
 
       def append_to_stream(stream_id : String, events : Sourced::EventList) : Bool
         @logger.debug { "Appending #{events.size} events to stream '#{stream_id}'" }
+        events_sql = String.build do |str|
+          str << INSERT_EVENTS_SQL
+          count = 0
+          str << events.map do |evt|
+            String.build do |f|
+              count += 1
+              f << "($#{count}::varchar, " # stream_id
+              count += 1
+              f << "$#{count}::varchar, " # topic
+              count += 1
+              f << "$#{count}, " # seq
+              count += 1
+              f << "$#{count}::timestamp, " # timestamp
+              count += 1
+              f << "$#{count})" # payload
+            end
+          end.join(", ")
+        end
+
+        event_rows = events.flat_map { |e| [stream_id, e.topic, e.seq, e.timestamp, e.payload_json] }
+
         @db.transaction do |tx|
           conn = tx.connection
-          events.each do |evt|
-            conn.exec(
-              INSERT_EVENT_SQL,
-              stream_id,
-              evt.topic,
-              evt.seq,
-              evt.timestamp,
-              evt.payload_json
-            )
-          end
+          conn.exec(events_sql, args: event_rows)
         end
         true
       rescue err : PQ::PQError
