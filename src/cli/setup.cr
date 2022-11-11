@@ -164,22 +164,12 @@ module CLI
     SQL_INDICES = [
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_event_ids ON event_store.events (id)),
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_event_seqs ON event_store.events (stream_id, seq)),
-      %(CREATE INDEX IF NOT EXISTS index_on_event_categories ON event_store.events (event_store.event_category(topic))),
       %(CREATE UNIQUE INDEX IF NOT EXISTS internal_events_pkey ON event_store.internal_events(id int4_ops)),
       %(CREATE UNIQUE INDEX IF NOT EXISTS unique_index_on_internal_event_seqs ON event_store.internal_events(stream_id text_ops,seq int8_ops)),
       %(CREATE INDEX IF NOT EXISTS index_on_internal_event_topics ON event_store.internal_events(topic)),
       %(CREATE UNIQUE INDEX IF NOT EXISTS categories_pkey ON event_store.categories(id uuid_ops)),
       %(CREATE UNIQUE INDEX IF NOT EXISTS categories_name_key ON event_store.categories(name text_ops)),
     ]
-
-    SQL_FN_EVENT_CATEGORY = <<-SQL
-    CREATE OR REPLACE FUNCTION event_store.event_category(topic varchar) RETURNS varchar AS $$
-    BEGIN
-      RETURN SPLIT_PART(event_category.topic, '.', 1);
-    END;
-    $$ LANGUAGE plpgsql
-    IMMUTABLE;
-    SQL
 
     define_flag database : String, required: true, short: d
 
@@ -193,7 +183,6 @@ module CLI
         pp db.exec(SQL_CREATE_CATEGORIES_TO_EVENTS_TABLE_SQL)
         pp db.exec(SQL_FN_HASH64)
         pp db.exec(SQL_FN_READ_CATEGORY)
-        pp db.exec(SQL_FN_EVENT_CATEGORY)
         pp db.exec(SQL_FN_READ_INTERNAL_STREAM)
         pp db.exec(SQL_PROC_COMPACT_STREAMS)
         SQL_INDICES.each do |str|
