@@ -80,6 +80,18 @@ module SourcedStore
       )
     end
 
+    def to_a
+      [
+        id,
+        topic,
+        stream_id,
+        seq,
+        created_at,
+        metadata,
+        payload
+      ]
+    end
+
     private def time_to_protobuf_timestamp(time : Time)
       Google::Protobuf::Timestamp
       span = time - Time::UNIX_EPOCH

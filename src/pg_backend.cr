@@ -234,18 +234,7 @@ module SourcedStore
         end.join(", ")
       end
 
-      event_rows = events.flat_map do |evt|
-        [
-          evt.id,
-          evt.topic,
-          evt.stream_id,
-          evt.seq,
-          evt.created_at,
-          evt.metadata,
-          evt.payload
-        ]
-      end
-
+      event_rows = events.flat_map(&.to_a)
       conn.exec(events_sql, args: event_rows)
     end
 
