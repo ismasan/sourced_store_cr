@@ -53,6 +53,25 @@ module SourcedStore
 
     NOTIFY_CHANNEL = "new-events"
 
+    class ConsumerNotifier
+      getter chan : Channel(Bool)
+
+      def initialize(@group_size : Int32, @consumer_position : Int32, @wait_timeout : Time::Span)
+        @chan = Channel(Bool).new
+
+        spawn do
+          sleep @wait_timeout
+          @chan.send(false)
+        end
+      end
+
+      def call(stream_id_hash : Int128)
+        return unless stream_id_hash % @group_size == @consumer_position
+
+        @chan.send(true)
+      end
+    end
+
     @db : DB::Database
     @listen_conn : PG::ListenConnection
 
@@ -74,13 +93,12 @@ module SourcedStore
         compact_every: compact_every,   # compact consumer group streams every Z interval,
         keep_snapshots: keep_snapshots  # keep this many snapshots per stream when compacting.
       )
-      # ToDO: here the event should include the hash_64(stream_id)
-      # so that this consumer can ignore the trigger and keep waiting for another one
-      # relevant to this consumer
-      @pollers = Hash(String, Channel(Bool)).new
+
+      @pollers = Hash(String, ConsumerNotifier).new
       @listen_conn = PG.connect_listen(@db_url, channels: [NOTIFY_CHANNEL], blocking: false) do |n|
-        @logger.debug { "PONG #{n.inspect}" }
-        @pollers.each_value { |ch| ch.send(true) }
+        stream_hash = n.payload.to_i128
+        @logger.debug { "PONG #{stream_hash}" }
+        @pollers.each_value { |ch| ch.call(stream_hash) }
       end
     end
 
@@ -101,7 +119,7 @@ module SourcedStore
 
         # ToDO: include hash_64(stream_id) in notification payload
         # so that listening consumers can ignore notifications that don't concern them
-        conn.exec("SELECT pg_notify($1, $2)", NOTIFY_CHANNEL, events.first.id)
+        conn.exec("SELECT pg_notify($1, $2)", NOTIFY_CHANNEL, stream_id_hash_for(stream_id))
       end
 
       ResultWithError.new(successful: true, error: nil)
@@ -145,15 +163,10 @@ module SourcedStore
       events = read_category_with_consumer(category, consumer, batch_size)
       if !events.any? && !wait_timeout.zero? # blocking poll
         @logger.debug { "no events for consumer #{consumer.info}. Blocking." }
-        chan = Channel(Bool).new
         poller_key = [category, consumer.key].join(":")
-        @pollers[poller_key] = chan
-        timeout = spawn do
-          sleep wait_timeout
-          chan.send(false)
-        end
+        @pollers[poller_key] = ConsumerNotifier.new(consumer.group_size, consumer.position, wait_timeout)
 
-        if chan.receive
+        if @pollers[poller_key].chan.receive
           consumer = @consumer_groups.checkin(consumer_group, consumer_id)
           events = read_category_with_consumer(category, consumer, batch_size)
         end
@@ -209,6 +222,10 @@ module SourcedStore
     end
 
     INSERT_EVENTS_START_SQL = %(INSERT INTO event_store.events (id, topic, stream_id, seq, created_at, metadata, payload) VALUES )
+
+    private def stream_id_hash_for(stream_id : String) : Int128
+      Digest::MD5.hexdigest(stream_id)[0...16].to_i128(16).abs
+    end
 
     private def db_insert_events(conn, events)
       events_sql = String.build do |str|
