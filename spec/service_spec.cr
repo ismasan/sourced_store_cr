@@ -1,7 +1,6 @@
 require "logger"
 require "uuid"
 require "./spec_helper"
-require "../src/cli/setup.cr"
 require "../src/service"
 
 describe SourcedStore::Service do
@@ -35,12 +34,12 @@ describe SourcedStore::Service do
   )
 
   before_all do
-    CLI::Setup.run(["--database=#{test_db_url}"])
     backend = SourcedStore::PGBackend.new(
       logger: logger,
       db_url: test_db_url,
       liveness_timeout: 10.milliseconds
     )
+    backend.setup
     service = SourcedStore::Service.new(backend)
     service.reset!
   end

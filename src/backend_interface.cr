@@ -16,6 +16,7 @@ module SourcedStore
     ) : Array(EventRecord)
 
     abstract def ack_consumer(consumer_group : String, consumer_id : String, last_seq : Int64?) : Bool
+    abstract def setup
     abstract def stop
     abstract def reset!
 

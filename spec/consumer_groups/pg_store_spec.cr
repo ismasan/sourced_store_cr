@@ -1,6 +1,7 @@
 require "./../spec_helper"
 require "./../test_app"
 require "./../../src/consumer_groups/pg_store"
+require "./../../src/cli/setup"
 
 describe SourcedStore::ConsumerGroups::PGStore do
   test_db_url = "postgres://localhost/sourced_store_test"

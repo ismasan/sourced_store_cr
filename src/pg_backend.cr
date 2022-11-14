@@ -1,14 +1,13 @@
 require "db"
 require "pg"
 
+require "./pg_backend/setup"
 require "./backend_interface"
 require "./structs"
 require "./consumer_groups"
 require "./consumer_groups/pg_store"
 
 # TODO:
-# global fiber listening to PG Notify events
-# auto-rebalance consumers after liveness interval
 # Advisory lock around consumer, so no duped consumers can consume or ACK at the same time
 module SourcedStore
   class PGBackend
@@ -187,6 +186,10 @@ module SourcedStore
       @consumer_groups.ack(consumer_group, consumer_id, last_seq)
 
       true
+    end
+
+    def setup
+      Setup.run(@db, @logger)
     end
 
     def stop
